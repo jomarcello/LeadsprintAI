@@ -1,6 +1,6 @@
-# 🏥 Autonomous Healthcare Agent
+# 🤖 Leadsprint AI Agent
 
-**A fully autonomous Node.js AI agent for healthcare practice automation with 24/7 Railway deployment, MCP integration, and complete lead-to-demo pipeline.**
+**A fully autonomous Node.js AI agent for healthcare lead generation and automated demo deployment with 24/7 Railway deployment, MCP integration, and complete lead-to-demo pipeline.**
 
 [![Railway Deploy](https://railway.app/button.svg)](https://railway.app/template/your-template-id)
 [![Node.js](https://img.shields.io/badge/Node.js-20+-green.svg)](https://nodejs.org/)
@@ -8,7 +8,7 @@
 
 ## 🎯 Overview
 
-This autonomous agent provides complete healthcare practice automation, from lead discovery to live demo deployment. It operates 24/7 on Railway, using AI-powered decision making and Model Context Protocol (MCP) integrations.
+This autonomous Leadsprint AI agent provides complete healthcare lead generation automation, from practice discovery to live demo deployment. It operates 24/7 on Railway, using AI-powered decision making and Model Context Protocol (MCP) integrations for seamless healthcare practice automation.
 
 ### ✨ Key Features
 
@@ -24,17 +24,34 @@ This autonomous agent provides complete healthcare practice automation, from lea
 ## 🏗️ Architecture
 
 ```mermaid
-graph TB
-    A[Lead Discovery] --> B[AI Planner]
-    B --> C[MCP Executor]
-    C --> D[Playwright Scraping]
-    C --> E[Notion Storage]
-    C --> F[Repository Creation]
-    C --> G[Railway Deployment]
-    C --> H[ElevenLabs Voice]
-    I[Task Scheduler] --> A
-    J[Health Monitor] --> B
-    K[Database] --> L[All Components]
+graph TD
+    A[🎯 Agent Activation] --> B[🔍 Healthcare Target Discovery]
+    B --> C[🌐 Web Scraping via Playwright MCP]
+    
+    C --> D[📊 Practice Data Extraction]
+    D --> E{📋 Lead Validation}
+    
+    E -->|✅ Valid| F[💾 Store in Notion CRM]
+    E -->|❌ Invalid| G[⚠️ Skip & Log Error]
+    
+    F --> H[📁 Create GitHub Repository]
+    H --> I[🎨 Personalize Demo Template]
+    I --> J[📤 Push to GitHub]
+    J --> K[🚂 Deploy to Railway]
+    K --> L[🌍 Generate Domain]
+    L --> M[🎙️ Setup ElevenLabs Voice AI]
+    M --> N[✅ Live Demo Ready]
+    
+    N --> O[📧 Update Notion with Demo URL]
+    O --> P[🔄 Ready for Next Lead]
+    
+    G --> P
+    
+    Q[⚡ MCP Integrations] --> R[Playwright - Web Scraping]
+    Q --> S[Notion - CRM Storage] 
+    Q --> T[Railway - Deployments]
+    Q --> U[ElevenLabs - Voice AI]
+    Q --> V[GitHub - Repository Management]
 ```
 
 ### 📁 Project Structure
