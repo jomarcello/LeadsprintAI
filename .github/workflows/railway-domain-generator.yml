@@ -1,0 +1,106 @@
+name: Railway Domain Generator
+
+on:
+  workflow_dispatch:
+    inputs:
+      service_id:
+        description: 'Railway Service ID'
+        required: true
+        type: string
+      practice_name:
+        description: 'Practice Name for logging'
+        required: true
+        type: string
+
+jobs:
+  generate-domain:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Generate Railway Domain
+        run: |
+          echo "🌐 Generating domain for ${{ inputs.practice_name }}"
+          echo "Service ID: ${{ inputs.service_id }}"
+          
+          # Install jq for JSON parsing
+          sudo apt-get update && sudo apt-get install -y jq
+          
+          # Wait for deployment to be ready (retry logic)
+          echo "⏳ Checking deployment status..."
+          MAX_RETRIES=10
+          RETRY_COUNT=0
+          
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            # Check deployment status
+            SERVICE_STATUS=$(curl -s --connect-timeout 30 --max-time 60 -X POST \
+              -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              -d "{\"query\":\"query { service(id: \\\"${{ inputs.service_id }}\\\") { id name activeDeployment { id status url } } }\"}" \
+              https://backboard.railway.app/graphql/v2)
+            
+            echo "Status response: $SERVICE_STATUS"
+            
+            DEPLOYMENT_STATUS=$(echo "$SERVICE_STATUS" | jq -r '.data.service.activeDeployment.status // "unknown"')
+            EXISTING_URL=$(echo "$SERVICE_STATUS" | jq -r '.data.service.activeDeployment.url // empty')
+            
+            echo "Deployment status: $DEPLOYMENT_STATUS"
+            
+            if [ "$DEPLOYMENT_STATUS" = "SUCCESS" ]; then
+              echo "✅ Deployment is successful!"
+              break
+            elif [ "$DEPLOYMENT_STATUS" = "FAILED" ]; then
+              echo "❌ Deployment failed"
+              exit 1
+            else
+              echo "⏳ Status: $DEPLOYMENT_STATUS, waiting 30 seconds... (attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)"
+              sleep 30
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+            fi
+          done
+          
+          # Generate domain if no existing URL
+          if [ -z "$EXISTING_URL" ] || [ "$EXISTING_URL" = "null" ] || [ "$EXISTING_URL" = "empty" ]; then
+            echo "🌐 No existing URL, generating domain..."
+            
+            DOMAIN_RESPONSE=$(curl -s --connect-timeout 30 --max-time 60 -X POST \
+              -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              -d "{\"query\":\"mutation { serviceDomainCreate(input: { serviceId: \\\"${{ inputs.service_id }}\\\" }) { id domain } }\"}" \
+              https://backboard.railway.app/graphql/v2)
+            
+            echo "Domain response: $DOMAIN_RESPONSE"
+            
+            GENERATED_DOMAIN=$(echo "$DOMAIN_RESPONSE" | jq -r '.data.serviceDomainCreate.domain // empty')
+            
+            if [ -n "$GENERATED_DOMAIN" ] && [ "$GENERATED_DOMAIN" != "null" ] && [ "$GENERATED_DOMAIN" != "empty" ]; then
+              FINAL_URL="https://$GENERATED_DOMAIN"
+              echo "✅ Generated domain: $FINAL_URL"
+            else
+              echo "⚠️ Domain generation failed"
+              FINAL_URL="Check Railway dashboard manually"
+            fi
+          else
+            FINAL_URL="$EXISTING_URL"
+            echo "✅ Using existing URL: $FINAL_URL"
+          fi
+          
+          # Test the URL
+          if [[ "$FINAL_URL" == https://* ]]; then
+            echo "🧪 Testing URL: $FINAL_URL"
+            STATUS=$(curl -s --connect-timeout 10 --max-time 30 -o /dev/null -w '%{http_code}' "$FINAL_URL" || echo '000')
+            echo "HTTP Status: $STATUS"
+            
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ URL is live and working!"
+            else
+              echo "⚠️ URL may still be starting up"
+            fi
+          fi
+          
+          echo ""
+          echo "📋 Final Result:"
+          echo "Practice: ${{ inputs.practice_name }}"
+          echo "Service ID: ${{ inputs.service_id }}"
+          echo "URL: $FINAL_URL"

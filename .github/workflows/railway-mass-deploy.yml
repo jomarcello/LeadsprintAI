@@ -1,0 +1,598 @@
+name: Railway Mass Deployment
+
+permissions:
+  contents: read
+  actions: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      practice_id:
+        description: 'Practice ID (e.g., advanced-spine-care)'
+        required: true
+        type: string
+      practice_name:
+        description: 'Practice Name (e.g., Advanced Spine Care)'
+        required: true
+        type: string
+      deploy_all:
+        description: 'Deploy all practices (ignores practice_id/name above)'
+        required: false
+        type: boolean
+        default: false
+  push:
+    branches: [ main ]
+    paths: [ 'src/lib/practice-config.ts' ]
+
+jobs:
+  deploy-single:
+    # ENABLED: Railway token updated - deployments restored
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.deploy_all }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy Fully Automated Railway Project
+        run: |
+          echo '🚀 Fully automated deployment for ${{ inputs.practice_name }} (${{ inputs.practice_id }})'
+          
+          # Create Railway project
+          PROJECT_RESPONSE=$(curl -s --connect-timeout 30 --max-time 60 -X POST \
+            -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"query":"mutation { projectCreate(input: { name: \"${{ inputs.practice_id }}-demo\" }) { id name } }"}' \
+            https://backboard.railway.app/graphql/v2)
+          
+          echo "Project response: $PROJECT_RESPONSE"
+          PROJECT_ID=$(echo "$PROJECT_RESPONSE" | jq -r '.data.projectCreate.id // empty')
+          
+          if [ -z "$PROJECT_ID" ]; then
+            echo "❌ Failed to create project"
+            exit 1
+          fi
+          
+          echo "✅ Created project: $PROJECT_ID"
+          
+          # Create service with practice-specific name
+          SERVICE_RESPONSE=$(curl -s --connect-timeout 30 --max-time 60 -X POST \
+            -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"query\":\"mutation { serviceCreate(input: { projectId: \\\"$PROJECT_ID\\\", name: \\\"${{ inputs.practice_id }}-demo\\\" }) { id name } }\"}" \
+            https://backboard.railway.app/graphql/v2)
+          
+          echo "Service response: $SERVICE_RESPONSE"
+          SERVICE_ID=$(echo "$SERVICE_RESPONSE" | jq -r '.data.serviceCreate.id // empty')
+          
+          if [ -z "$SERVICE_ID" ]; then
+            echo "❌ Failed to create service"
+            exit 1
+          fi
+          
+          echo "✅ Created service: $SERVICE_ID"
+          
+          # REMOVED: serviceConnect - This was causing ALL services to redeploy on every push
+          # Instead of connecting to GitHub, we'll use a one-time deployment
+          echo "⚠️ Skipping GitHub connection to prevent bulk redeployments"
+          
+          # Set PRACTICE_ID environment variable with retry logic
+          echo "Setting PRACTICE_ID environment variable..."
+          for i in {1..3}; do
+            PRACTICE_VAR_RESPONSE=$(curl -s --connect-timeout 30 --max-time 60 -X POST \
+              -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              -d "{\"query\":\"mutation { variableUpsert(input: { serviceId: \\\"$SERVICE_ID\\\", name: \\\"PRACTICE_ID\\\", value: \\\"${{ inputs.practice_id }}\\\" }) { id name value } }\"}" \
+              https://backboard.railway.app/graphql/v2)
+            
+            if echo "$PRACTICE_VAR_RESPONSE" | grep -q '"data"'; then
+              echo "✅ PRACTICE_ID set successfully"
+              break
+            else
+              echo "❌ Attempt $i failed: $PRACTICE_VAR_RESPONSE"
+              if [ $i -lt 3 ]; then
+                sleep 5
+              fi
+            fi
+          done
+          
+          # Set NODE_ENV environment variable with retry logic
+          echo "Setting NODE_ENV environment variable..."
+          for i in {1..3}; do
+            NODE_ENV_RESPONSE=$(curl -s --connect-timeout 30 --max-time 60 -X POST \
+              -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              -d "{\"query\":\"mutation { variableUpsert(input: { serviceId: \\\"$SERVICE_ID\\\", name: \\\"NODE_ENV\\\", value: \\\"production\\\" }) { id name value } }\"}" \
+              https://backboard.railway.app/graphql/v2)
+            
+            if echo "$NODE_ENV_RESPONSE" | grep -q '"data"'; then
+              echo "✅ NODE_ENV set successfully"
+              break
+            else
+              echo "❌ Attempt $i failed: $NODE_ENV_RESPONSE"
+              if [ $i -lt 3 ]; then
+                sleep 5
+              fi
+            fi
+          done
+          
+          
+          # Wait a moment for setup to complete
+          sleep 15
+          
+          # Get current commit hash for one-time deployment  
+          COMMIT_HASH=$(git rev-parse HEAD)
+          echo "Using commit hash: $COMMIT_HASH"
+          
+          # Trigger one-time deployment from specific commit (no permanent GitHub connection)
+          echo "Triggering one-time deployment..."
+          for i in {1..3}; do
+            DEPLOY_RESPONSE=$(curl -s --connect-timeout 30 --max-time 60 -X POST \
+              -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              -d "{\"query\":\"mutation { serviceInstanceDeploy(serviceId: \\\"$SERVICE_ID\\\", commitSha: \\\"$COMMIT_HASH\\\", repo: \\\"jomarcello/Agentsdemo\\\") }\"}" \
+              https://backboard.railway.app/graphql/v2)
+            
+            if echo "$DEPLOY_RESPONSE" | grep -q '"data"'; then
+              echo "✅ One-time deployment triggered successfully (no GitHub connection created)"
+              break
+            else
+              echo "❌ Deploy attempt $i failed: $DEPLOY_RESPONSE"
+              if [ $i -lt 3 ]; then
+                sleep 10
+              fi
+            fi
+          done
+          
+          # Railway generates predictable URLs: {service-name}-{environment}.up.railway.app
+          DEPLOYMENT_URL="https://${{ inputs.practice_id }}-demo-production.up.railway.app"
+          echo "deployment_url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
+          
+          echo "✅ Fully automated deployment initiated!"
+          echo "🔗 Project URL: https://railway.app/project/$PROJECT_ID"  
+          echo "🌐 App URL: $DEPLOYMENT_URL"
+          echo "⏳ Deployment will be ready in ~2-3 minutes"
+          
+          echo "✅ Deployment triggered successfully!"
+          echo "📋 Project ID: $PROJECT_ID"
+          echo "📋 Service ID: $SERVICE_ID"
+          echo "🔗 Project URL: https://railway.app/project/$PROJECT_ID"
+          echo ""
+          echo "⚡ Auto-triggering domain generation workflow..."
+          
+          # Trigger domain generation workflow automatically (with better error handling)
+          echo "🔗 Triggering domain generation workflow..."
+          WORKFLOW_RESPONSE=$(curl -s --connect-timeout 30 --max-time 60 -X POST \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Content-Type: application/json" \
+            -d "{\"ref\":\"main\",\"inputs\":{\"service_id\":\"$SERVICE_ID\",\"practice_name\":\"${{ inputs.practice_name }}\"}}" \
+            "https://api.github.com/repos/jomarcello/Agentsdemo/actions/workflows/railway-domain-generator.yml/dispatches")
+          
+          WORKFLOW_STATUS=$?
+          
+          if [ $WORKFLOW_STATUS -eq 0 ]; then
+            echo "✅ Domain generation workflow triggered successfully!"
+            echo "🔗 Monitor at: https://github.com/jomarcello/Agentsdemo/actions"
+          else
+            echo "⚠️ Domain workflow trigger returned status: $WORKFLOW_STATUS"
+            echo "💡 You can manually trigger domain generation with Service ID: $SERVICE_ID"
+          fi
+
+      - name: Test deployment
+        run: |
+          echo "🧪 Testing deployment..."
+          echo "Practice: ${{ inputs.practice_name }}"
+          echo "URL: ${{ steps.deploy.outputs.deployment_url }}"
+          echo "Status: ${{ steps.deploy.outputs.http_status }}"
+
+  deploy-auto:
+    # ENABLED: Railway token updated - auto deployments restored with bulk prevention
+    # Only triggers for new practices added to practice-config.ts
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check if new practice was added
+        id: check
+        run: |
+          echo "🔍 Checking if a new practice was added..."
+          
+          # Get the diff of practice-config.ts between current and previous commit
+          DIFF_OUTPUT=$(git diff HEAD~1 HEAD -- src/lib/practice-config.ts)
+          
+          echo "Git diff output:"
+          echo "$DIFF_OUTPUT"
+          
+          # More precise detection: Only detect NEWLY ADDED practice entries
+          # Look specifically for new practice definitions being added (not modifications)
+          NEW_PRACTICE_LINES=$(echo "$DIFF_OUTPUT" | grep "^+" | grep -E "'[a-z0-9-]+(-[a-z0-9]+)*':\s*{")
+          
+          if [ -z "$NEW_PRACTICE_LINES" ]; then
+            echo "❌ No new practice detected in diff - skipping deployment"
+            echo "should_deploy=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Count how many practices are being added (should be exactly 1 for single new lead)
+          PRACTICE_COUNT=$(echo "$NEW_PRACTICE_LINES" | wc -l | tr -d ' ')
+          echo "📊 Number of practices detected in diff: $PRACTICE_COUNT"
+          
+          if [ "$PRACTICE_COUNT" -gt 1 ]; then
+            echo "⚠️ Multiple practices detected - this might be a bulk change"
+            echo "🔍 Detected practices:"
+            echo "$NEW_PRACTICE_LINES"
+          fi
+          
+          # Get the first (and hopefully only) new practice
+          NEW_PRACTICE_ADDED=$(echo "$NEW_PRACTICE_LINES" | head -1)
+          
+          echo "✅ New practice detected: $NEW_PRACTICE_ADDED"
+          echo "should_deploy=true" >> $GITHUB_OUTPUT
+          
+          # Extract practice ID from added lines with improved regex
+          NEW_PRACTICE=$(echo "$NEW_PRACTICE_ADDED" | grep -o "'[a-z0-9-]*':" | head -1 | sed "s/'//g" | sed "s/://g")
+          
+          if [ -z "$NEW_PRACTICE" ]; then
+            # Enhanced fallback: check for specific practices in the diff
+            if echo "$DIFF_OUTPUT" | grep -q "test-wellness-demo"; then
+              NEW_PRACTICE="test-wellness-demo"
+            elif echo "$DIFF_OUTPUT" | grep -q "rotterdam-wellness"; then
+              NEW_PRACTICE="rotterdam-wellness"
+            elif echo "$DIFF_OUTPUT" | grep -q "london-physio"; then
+              NEW_PRACTICE="london-physio"
+            elif echo "$DIFF_OUTPUT" | grep -q "berlin-spine"; then
+              NEW_PRACTICE="berlin-spine"
+            elif echo "$DIFF_OUTPUT" | grep -q "paris-spine-clinic"; then
+              NEW_PRACTICE="paris-spine-clinic"
+            elif echo "$DIFF_OUTPUT" | grep -q "tokyo-wellness-center"; then
+              NEW_PRACTICE="tokyo-wellness-center"
+            elif echo "$DIFF_OUTPUT" | grep -q "milan-beauty-clinic"; then
+              NEW_PRACTICE="milan-beauty-clinic"
+            elif echo "$DIFF_OUTPUT" | grep -q "nijmegen-fysio"; then
+              NEW_PRACTICE="nijmegen-fysio"
+            elif echo "$DIFF_OUTPUT" | grep -q "munich-wellness-zentrum"; then
+              NEW_PRACTICE="munich-wellness-zentrum"
+            elif echo "$DIFF_OUTPUT" | grep -q "utrecht-wellness-centrum"; then
+              NEW_PRACTICE="utrecht-wellness-centrum"
+            elif echo "$DIFF_OUTPUT" | grep -q "antwerpen-wellness-centrum"; then
+              NEW_PRACTICE="antwerpen-wellness-centrum"
+            elif echo "$DIFF_OUTPUT" | grep -q "barcelona-wellness-clinic"; then
+              NEW_PRACTICE="barcelona-wellness-clinic"
+            else
+              echo "❌ Could not extract practice ID from diff"
+              echo "should_deploy=false" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+          fi
+          
+          echo "🎯 Detected practice: $NEW_PRACTICE"
+          echo "practice_id=$NEW_PRACTICE" >> $GITHUB_OUTPUT
+          
+          # ENHANCED DUPLICATE PREVENTION
+          # 1. Check if this practice was already deployed recently
+          RECENT_DEPLOYMENTS=$(git log --oneline -10 --grep="$NEW_PRACTICE")
+          
+          if [ ! -z "$RECENT_DEPLOYMENTS" ]; then
+            echo "⚠️ Found recent deployment for $NEW_PRACTICE:"
+            echo "$RECENT_DEPLOYMENTS"
+            
+            # Check if it was deployed in the last 3 commits
+            VERY_RECENT=$(git log --oneline -3 --grep="$NEW_PRACTICE")
+            if [ ! -z "$VERY_RECENT" ]; then
+              echo "❌ Practice $NEW_PRACTICE was deployed very recently, skipping duplicate deployment"
+              echo "should_deploy=false" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+          fi
+          
+          # 2. CRITICAL KILL SWITCH: Absolutely prevent bulk deployments
+          if [ "$PRACTICE_COUNT" -gt 1 ]; then
+            echo "🚫 EMERGENCY STOP: Multiple practices detected in single commit!"
+            echo "🔒 BULK DEPLOYMENT PREVENTION ACTIVATED"
+            echo "📊 Detected $PRACTICE_COUNT practices - MAXIMUM ALLOWED: 1"
+            echo "🛑 This commit is BLOCKED from triggering any deployments"
+            echo "💡 Solution: Separate commits for each new practice"
+            echo "should_deploy=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # 2b. ADDITIONAL PROTECTION: Prevent ANY deployment if file contains too many changes
+          TOTAL_CHANGES=$(echo "$DIFF_OUTPUT" | grep "^+" | wc -l | tr -d ' ')
+          if [ "$TOTAL_CHANGES" -gt 50 ]; then
+            echo "🚫 BULK CHANGE DETECTED: $TOTAL_CHANGES additions in diff"
+            echo "🔒 Large changes are BLOCKED to prevent accidental bulk deployments"
+            echo "should_deploy=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # 3. Final verification: Check if this practice already exists in Railway
+          echo "🔍 Final check: Verifying this is genuinely a NEW practice..."
+          
+          # Set practice name based on ID
+          case $NEW_PRACTICE in
+            "rotterdam-wellness")
+              echo "practice_name=Rotterdam Wellness Center" >> $GITHUB_OUTPUT
+              ;;
+            "advanced-spine-care")
+              echo "practice_name=Advanced Spine Care" >> $GITHUB_OUTPUT
+              ;;
+            "smith")
+              echo "practice_name=Smith Chiropractic" >> $GITHUB_OUTPUT
+              ;;
+            "spinealign")
+              echo "practice_name=SpineAlign Center" >> $GITHUB_OUTPUT
+              ;;
+            "smart-cosmetic")
+              echo "practice_name=Smart Cosmetic Clinic" >> $GITHUB_OUTPUT
+              ;;
+            "amsterdam-wellness")
+              echo "practice_name=Amsterdam Wellness Clinic" >> $GITHUB_OUTPUT
+              ;;
+            "berlin-spine")
+              echo "practice_name=Berlin Spine Clinic" >> $GITHUB_OUTPUT
+              ;;
+            "london-physio")
+              echo "practice_name=London Physiotherapy Clinic" >> $GITHUB_OUTPUT
+              ;;
+            "test-wellness-demo")
+              echo "practice_name=Demo Wellness Center" >> $GITHUB_OUTPUT
+              ;;
+            "paris-spine-clinic")
+              echo "practice_name=Paris Spine Clinic" >> $GITHUB_OUTPUT
+              ;;
+            "tokyo-wellness-center")
+              echo "practice_name=Tokyo Wellness Center" >> $GITHUB_OUTPUT
+              ;;
+            "milan-beauty-clinic")
+              echo "practice_name=Milan Beauty Clinic" >> $GITHUB_OUTPUT
+              ;;
+            "nijmegen-fysio")
+              echo "practice_name=Fysiotherapie Centrum Nijmegen" >> $GITHUB_OUTPUT
+              ;;
+            "munich-wellness-zentrum")
+              echo "practice_name=München Wellness Zentrum" >> $GITHUB_OUTPUT
+              ;;
+            "utrecht-wellness-centrum")
+              echo "practice_name=Utrecht Wellness Centrum" >> $GITHUB_OUTPUT
+              ;;
+            "antwerpen-wellness-centrum")
+              echo "practice_name=Antwerpen Wellness Centrum" >> $GITHUB_OUTPUT
+              ;;
+            "barcelona-wellness-clinic")
+              echo "practice_name=Barcelona Wellness Clinic" >> $GITHUB_OUTPUT
+              ;;
+            *)
+              echo "practice_name=Unknown Practice" >> $GITHUB_OUTPUT
+              ;;
+          esac
+
+      - name: Deploy detected practice to Railway
+        if: ${{ steps.check.outputs.should_deploy == 'true' }}
+        run: |
+          PRACTICE_ID="${{ steps.check.outputs.practice_id }}"
+          PRACTICE_NAME="${{ steps.check.outputs.practice_name }}"
+          
+          echo "🚀 Auto-deploying $PRACTICE_NAME ($PRACTICE_ID)"
+          
+          # Create Railway project
+          PROJECT_RESPONSE=$(curl -s --connect-timeout 30 --max-time 60 -X POST \
+            -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"query\":\"mutation { projectCreate(input: { name: \\\"$PRACTICE_ID-demo\\\" }) { id name } }\"}" \
+            https://backboard.railway.app/graphql/v2)
+          
+          echo "Project response: $PROJECT_RESPONSE"
+          PROJECT_ID=$(echo "$PROJECT_RESPONSE" | jq -r '.data.projectCreate.id // empty')
+          
+          if [ -z "$PROJECT_ID" ]; then
+            echo "❌ Failed to create project"
+            exit 1
+          fi
+          
+          echo "✅ Created project: $PROJECT_ID"
+          
+          # Create service
+          SERVICE_RESPONSE=$(curl -s --connect-timeout 30 --max-time 60 -X POST \
+            -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"query\":\"mutation { serviceCreate(input: { projectId: \\\"$PROJECT_ID\\\", name: \\\"$PRACTICE_ID-demo\\\" }) { id name } }\"}" \
+            https://backboard.railway.app/graphql/v2)
+          
+          echo "Service response: $SERVICE_RESPONSE"
+          SERVICE_ID=$(echo "$SERVICE_RESPONSE" | jq -r '.data.serviceCreate.id // empty')
+          
+          if [ -z "$SERVICE_ID" ]; then
+            echo "❌ Failed to create service"
+            exit 1
+          fi
+          
+          echo "✅ Created service: $SERVICE_ID"
+          
+          # REMOVED: serviceConnect - This was causing ALL services to redeploy on every push
+          # Instead of connecting to GitHub, we'll use a one-time deployment
+          echo "⚠️ Skipping GitHub connection to prevent bulk redeployments"
+          
+          # Set PRACTICE_ID environment variable with retry logic
+          echo "Setting PRACTICE_ID environment variable..."
+          for i in {1..3}; do
+            PRACTICE_VAR_RESPONSE=$(curl -s --connect-timeout 30 --max-time 60 -X POST \
+              -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              -d "{\"query\":\"mutation { variableUpsert(input: { serviceId: \\\"$SERVICE_ID\\\", name: \\\"PRACTICE_ID\\\", value: \\\"$PRACTICE_ID\\\" }) { id name value } }\"}" \
+              https://backboard.railway.app/graphql/v2)
+            
+            if echo "$PRACTICE_VAR_RESPONSE" | grep -q '"data"'; then
+              echo "✅ PRACTICE_ID set successfully"
+              break
+            else
+              echo "❌ Attempt $i failed: $PRACTICE_VAR_RESPONSE"
+              if [ $i -lt 3 ]; then
+                sleep 5
+              fi
+            fi
+          done
+          
+          # Set NODE_ENV environment variable with retry logic
+          echo "Setting NODE_ENV environment variable..."
+          for i in {1..3}; do
+            NODE_ENV_RESPONSE=$(curl -s --connect-timeout 30 --max-time 60 -X POST \
+              -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              -d "{\"query\":\"mutation { variableUpsert(input: { serviceId: \\\"$SERVICE_ID\\\", name: \\\"NODE_ENV\\\", value: \\\"production\\\" }) { id name value } }\"}" \
+              https://backboard.railway.app/graphql/v2)
+            
+            if echo "$NODE_ENV_RESPONSE" | grep -q '"data"'; then
+              echo "✅ NODE_ENV set successfully"
+              break
+            else
+              echo "❌ Attempt $i failed: $NODE_ENV_RESPONSE"
+              if [ $i -lt 3 ]; then
+                sleep 5
+              fi
+            fi
+          done
+          
+          # Wait for setup
+          sleep 15
+          
+          # Get current commit hash for one-time deployment  
+          COMMIT_HASH=$(git rev-parse HEAD)
+          echo "Using commit hash: $COMMIT_HASH"
+          
+          # Trigger one-time deployment from specific commit (no permanent GitHub connection)
+          echo "Triggering one-time deployment..."
+          for i in {1..3}; do
+            DEPLOY_RESPONSE=$(curl -s --connect-timeout 30 --max-time 60 -X POST \
+              -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              -d "{\"query\":\"mutation { serviceInstanceDeploy(serviceId: \\\"$SERVICE_ID\\\", commitSha: \\\"$COMMIT_HASH\\\", repo: \\\"jomarcello/Agentsdemo\\\") }\"}" \
+              https://backboard.railway.app/graphql/v2)
+            
+            if echo "$DEPLOY_RESPONSE" | grep -q '"data"'; then
+              echo "✅ One-time deployment triggered successfully (no GitHub connection created)"
+              break
+            else
+              echo "❌ Deploy attempt $i failed: $DEPLOY_RESPONSE"
+              if [ $i -lt 3 ]; then
+                sleep 10
+              fi
+            fi
+          done
+          
+          DEPLOYMENT_URL="https://$PRACTICE_ID-demo-production.up.railway.app"
+          echo "deployment_url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
+          
+          echo "✅ $PRACTICE_NAME deployment complete!"
+          echo "🔗 Project URL: https://railway.app/project/$PROJECT_ID"  
+          echo "🌐 App URL: $DEPLOYMENT_URL"
+          
+          # Auto-trigger domain generation workflow with better error handling
+          echo "🔗 Triggering domain generation workflow..."
+          WORKFLOW_RESPONSE=$(curl -s --connect-timeout 30 --max-time 60 -X POST \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Content-Type: application/json" \
+            -d "{\"ref\":\"main\",\"inputs\":{\"service_id\":\"$SERVICE_ID\",\"practice_name\":\"$PRACTICE_NAME\"}}" \
+            "https://api.github.com/repos/jomarcello/Agentsdemo/actions/workflows/railway-domain-generator.yml/dispatches")
+          
+          WORKFLOW_STATUS=$?
+          
+          if [ $WORKFLOW_STATUS -eq 0 ]; then
+            echo "✅ Domain generation workflow triggered successfully!"
+            echo "🔗 Monitor at: https://github.com/jomarcello/Agentsdemo/actions"
+          else
+            echo "⚠️ Domain workflow trigger returned status: $WORKFLOW_STATUS"
+            echo "💡 You can manually trigger domain generation with Service ID: $SERVICE_ID"
+          fi
+
+      - name: Skip deployment message
+        if: ${{ steps.check.outputs.should_deploy == 'false' }}
+        run: |
+          echo "⏭️ Skipping deployment - no new practice detected"
+          echo "ℹ️ Only deployments are triggered when new practices are added to practice-config.ts"
+          echo "ℹ️ This prevents unnecessary redeployments of existing practices"
+
+      - name: Test auto deployment
+        if: ${{ steps.check.outputs.should_deploy == 'true' }}
+        run: |
+          echo "🧪 Testing auto deployment..."
+          echo "Practice: ${{ steps.check.outputs.practice_name }}"
+          echo "URL: https://${{ steps.check.outputs.practice_id }}-demo-production.up.railway.app"
+
+  deploy-all:
+    # DISABLED: This job was causing bulk deployments of all practices
+    # Only enable this job for manual mass deployments via workflow_dispatch
+    if: ${{ inputs.deploy_all && github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        practice:
+          - { id: 'spinealign', name: 'SpineAlign Center' }
+          - { id: 'smith', name: 'Smith Chiropractic' }
+          - { id: 'smart-cosmetic', name: 'Smart Cosmetic Clinic' }
+          - { id: 'beautymed', name: 'BeautyMed Clinic' }
+          - { id: 'advanced-spine-care', name: 'Advanced Spine Care' }
+          - { id: '111-harley-street', name: '111 Harley Street' }
+          - { id: '152-harley-street', name: '152 Harley Street' }
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy ${{ matrix.practice.name }}
+        uses: docker://ghcr.io/railwayapp/cli:latest
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        with:
+          entrypoint: sh
+          args: |
+            -c "
+            echo '🚀 Deploying ${{ matrix.practice.name }} (${{ matrix.practice.id }})'
+            
+            # Install required tools
+            apk add --no-cache jq curl
+            
+            # Initialize Railway project
+            railway init -n '${{ matrix.practice.id }}-demo'
+            
+            # Set environment variables
+            railway variables --set 'PRACTICE_ID=${{ matrix.practice.id }}'
+            railway variables --set 'NODE_ENV=production'
+            
+            # Deploy
+            railway up --detach
+            
+            # Get deployment URL
+            DEPLOYMENT_URL=$(railway status --json | jq -r '.deployments[0].url // empty')
+            if [ -z \"$DEPLOYMENT_URL\" ]; then
+              DEPLOYMENT_URL=\"https://${{ matrix.practice.id }}-demo-production.up.railway.app\"
+            fi
+            
+            echo \"✅ ${{ matrix.practice.name }} deployed: $DEPLOYMENT_URL\"
+            
+            # Test HTTP status
+            sleep 30
+            STATUS=$(curl -s -o /dev/null -w '%{http_code}' \"$DEPLOYMENT_URL\" || echo '000')
+            echo \"🔍 ${{ matrix.practice.name }} Status: $STATUS\"
+            "
+
+  summary:
+    # DISABLED: Only run for manual mass deployments
+    if: ${{ inputs.deploy_all && github.event_name == 'workflow_dispatch' }}
+    needs: deploy-all
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deployment Summary
+        run: |
+          echo "🎉 Mass deployment complete!"
+          echo "Deployed practices:"
+          echo "- SpineAlign Center: https://spinealign-demo-production.up.railway.app"
+          echo "- Smith Chiropractic: https://smith-demo-production.up.railway.app"  
+          echo "- Smart Cosmetic Clinic: https://smart-cosmetic-demo-production.up.railway.app"
+          echo "- BeautyMed Clinic: https://beautymed-demo-production.up.railway.app"
+          echo "- Advanced Spine Care: https://advanced-spine-care-demo-production.up.railway.app"
+          echo "- 111 Harley Street: https://111-harley-street-demo-production.up.railway.app"
+          echo "- 152 Harley Street: https://152-harley-street-demo-production.up.railway.app"

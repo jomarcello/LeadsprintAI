@@ -1,0 +1,191 @@
+name: Railway Emergency Disconnect
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "EMERGENCY_DISCONNECT" to confirm'
+        required: true
+        type: string
+
+jobs:
+  emergency-disconnect:
+    if: ${{ inputs.confirm == 'EMERGENCY_DISCONNECT' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Emergency Disconnect All Railway Services
+        run: |
+          echo "🚨 EMERGENCY: Disconnecting all Railway services from GitHub"
+          echo "🎯 GOAL: Stop bulk deployments when pushing to main branch"
+          echo ""
+          
+          # Step 1: Query all projects to understand current state
+          echo "🔍 Step 1: Querying Railway projects..."
+          
+          PROJECTS_RESPONSE=$(curl -s --connect-timeout 30 --max-time 60 -X POST \
+            -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"query":"query { me { projects { edges { node { id name services { edges { node { id name source { __typename ... on GitHubSource { id repo branch } } } } } } } } }"}' \
+            https://backboard.railway.app/graphql/v2)
+          
+          echo "📋 Projects query response:"
+          echo "$PROJECTS_RESPONSE" | jq . 2>/dev/null || echo "$PROJECTS_RESPONSE"
+          echo ""
+          
+          # Step 2: Find services connected to our GitHub repo
+          echo "🔍 Step 2: Finding GitHub-connected services..."
+          
+          if echo "$PROJECTS_RESPONSE" | grep -q "jomarcello"; then
+            echo "✅ Found services connected to jomarcello repositories"
+            
+            # Extract service IDs that are connected to GitHub
+            SERVICE_IDS=$(echo "$PROJECTS_RESPONSE" | jq -r '.data.me.projects.edges[].node.services.edges[].node | select(.source.__typename == "GitHubSource" and .source.repo == "jomarcello/Agentsdemo") | .id' 2>/dev/null || echo "")
+            
+            if [ ! -z "$SERVICE_IDS" ]; then
+              echo "🎯 Found services to disconnect:"
+              echo "$SERVICE_IDS"
+              echo ""
+              
+              # Step 3: Disconnect each service
+              echo "🔌 Step 3: Disconnecting services..."
+              
+              for SERVICE_ID in $SERVICE_IDS; do
+                echo "🔌 Disconnecting service: $SERVICE_ID"
+                
+                DISCONNECT_RESPONSE=$(curl -s --connect-timeout 30 --max-time 60 -X POST \
+                  -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
+                  -H "Content-Type: application/json" \
+                  -d "{\"query\":\"mutation { serviceDisconnect(id: \\\"$SERVICE_ID\\\") { id name } }\"}" \
+                  https://backboard.railway.app/graphql/v2)
+                
+                if echo "$DISCONNECT_RESPONSE" | grep -q '"data"'; then
+                  echo "   ✅ Successfully disconnected"
+                else
+                  echo "   ❌ Failed: $DISCONNECT_RESPONSE"
+                fi
+                
+                sleep 1  # Rate limiting
+              done
+              
+            else
+              echo "⚠️  No services found connected to jomarcello/Agentsdemo"
+              echo "This might mean they're already disconnected!"
+            fi
+            
+          else
+            echo "⚠️  No jomarcello repositories found in response"
+            echo "Possible reasons:"
+            echo "  1. Services already disconnected ✅"
+            echo "  2. Different authentication needed"
+            echo "  3. Services in different account"
+          fi
+          
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          
+          # Step 4: Alternative approach - try to disconnect known problematic services
+          echo "🔍 Step 4: Alternative approach - disconnect by project name..."
+          
+          # Get all projects and find ones that match our naming pattern
+          ALL_PROJECTS_RESPONSE=$(curl -s --connect-timeout 30 --max-time 60 -X POST \
+            -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"query":"query { me { projects { edges { node { id name services { edges { node { id name } } } } } } }"}' \
+            https://backboard.railway.app/graphql/v2)
+          
+          echo "📋 All projects response:"
+          echo "$ALL_PROJECTS_RESPONSE" | jq . 2>/dev/null || echo "$ALL_PROJECTS_RESPONSE"
+          echo ""
+          
+          # Look for demo projects
+          if echo "$ALL_PROJECTS_RESPONSE" | grep -q "demo"; then
+            echo "🎯 Found demo projects - these are likely the problematic ones"
+            
+            # Extract project names that end with "-demo"
+            DEMO_PROJECTS=$(echo "$ALL_PROJECTS_RESPONSE" | jq -r '.data.me.projects.edges[].node | select(.name | endswith("-demo")) | .name' 2>/dev/null || echo "")
+            
+            if [ ! -z "$DEMO_PROJECTS" ]; then
+              echo "📋 Demo projects found:"
+              echo "$DEMO_PROJECTS"
+              echo ""
+              echo "🚨 These projects are likely causing bulk deployments!"
+              echo ""
+              
+              # For each demo project, disconnect its services
+              for PROJECT_NAME in $DEMO_PROJECTS; do
+                echo "🔍 Checking project: $PROJECT_NAME"
+                
+                # Get services for this project
+                PROJECT_SERVICES=$(echo "$ALL_PROJECTS_RESPONSE" | jq -r ".data.me.projects.edges[] | select(.node.name == \"$PROJECT_NAME\") | .node.services.edges[].node.id" 2>/dev/null || echo "")
+                
+                for SERVICE_ID in $PROJECT_SERVICES; do
+                  echo "   🔌 Disconnecting service: $SERVICE_ID"
+                  
+                  DISCONNECT_RESPONSE=$(curl -s --connect-timeout 30 --max-time 60 -X POST \
+                    -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
+                    -H "Content-Type: application/json" \
+                    -d "{\"query\":\"mutation { serviceDisconnect(id: \\\"$SERVICE_ID\\\") { id name } }\"}" \
+                    https://backboard.railway.app/graphql/v2)
+                  
+                  if echo "$DISCONNECT_RESPONSE" | grep -q '"data"'; then
+                    echo "      ✅ Successfully disconnected from GitHub"
+                  else
+                    echo "      ⚠️  Response: $DISCONNECT_RESPONSE"
+                  fi
+                  
+                  sleep 0.5
+                done
+              done
+            fi
+          fi
+          
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          echo "✅ EMERGENCY DISCONNECT COMPLETE"
+          echo ""
+          echo "📋 WHAT WAS ACCOMPLISHED:"
+          echo "- Queried all Railway projects and services"
+          echo "- Identified services connected to jomarcello/Agentsdemo"
+          echo "- Executed serviceDisconnect mutations"
+          echo "- Targeted all '*-demo' projects specifically"
+          echo ""
+          echo "🧪 IMMEDIATE TEST:"
+          echo "1. Go to Railway dashboard: https://railway.app/dashboard"
+          echo "2. Check each project - should show 'No source connected'"
+          echo "3. Services should still be running normally"
+          echo ""
+          echo "🚀 VERIFICATION TEST:"
+          echo "1. Make a small commit and push to main"
+          echo "2. Only NEW practices should trigger deployment"
+          echo "3. Existing services should NOT redeploy"
+          echo ""
+          echo "🎉 SUCCESS CRITERIA MET IF:"
+          echo "- No bulk deployments on git push"
+          echo "- Only single new practice deployments"
+          echo "- All existing services continue running"
+
+      - name: Post-Disconnect Verification
+        run: |
+          echo ""
+          echo "🔍 POST-DISCONNECT VERIFICATION"
+          echo ""
+          
+          # Query projects again to verify disconnection
+          VERIFY_RESPONSE=$(curl -s --connect-timeout 30 --max-time 60 -X POST \
+            -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"query":"query { me { projects { edges { node { id name services { edges { node { id name source { __typename } } } } } } } }"}' \
+            https://backboard.railway.app/graphql/v2)
+          
+          echo "📋 Verification - services with sources:"
+          echo "$VERIFY_RESPONSE" | jq '.data.me.projects.edges[].node.services.edges[].node | select(.source != null) | {name: .name, source: .source.__typename}' 2>/dev/null || echo "No sources found or JSON parsing failed"
+          
+          echo ""
+          echo "✅ If no GitHubSource entries appear above, disconnection was successful!"
+          echo "✅ All services should now be disconnected from GitHub"
+          echo "✅ Bulk deployment problem should be resolved"

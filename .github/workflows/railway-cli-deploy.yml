@@ -1,0 +1,96 @@
+name: Railway CLI Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      practice_id:
+        description: 'Practice ID (e.g., advanced-spine-care)'
+        required: true
+        type: string
+      practice_name:
+        description: 'Practice Name (e.g., Advanced Spine Care)'
+        required: true
+        type: string
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: |
+          curl -fsSL https://railway.app/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Deploy to Railway using CLI
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          echo "🚀 Deploying ${{ inputs.practice_name }} (${{ inputs.practice_id }}) using Railway CLI"
+          
+          # Verify token is available
+          if [ -z "$RAILWAY_TOKEN" ]; then
+            echo "❌ RAILWAY_TOKEN not found"
+            exit 1
+          fi
+          
+          # Try browserless login first
+          echo "🔑 Authenticating with Railway..."
+          railway login --browserless || echo "Browserless login failed, trying token auth"
+          
+          # Alternative: Try setting up config manually
+          mkdir -p ~/.config/railway
+          echo "accessToken: $RAILWAY_TOKEN" > ~/.config/railway/config.json
+          
+          # Initialize new project
+          PROJECT_NAME="${{ inputs.practice_id }}-demo"
+          echo "📝 Creating Railway project: $PROJECT_NAME"
+          railway init -n "$PROJECT_NAME"
+          
+          # Set environment variables
+          echo "⚙️ Setting environment variables..."
+          railway variables --set "PRACTICE_ID=${{ inputs.practice_id }}"
+          railway variables --set "NODE_ENV=production"
+          
+          # Deploy the service
+          echo "🚀 Deploying service..."
+          railway up --detach
+          
+          # Wait for deployment to start
+          echo "⏳ Waiting for deployment to start..."
+          sleep 30
+          
+          # Generate domain
+          echo "🌐 Generating public domain..."
+          railway domain || echo "⚠️ Domain generation may need retry"
+          
+          # Wait a bit more for everything to settle
+          echo "⏳ Waiting for deployment to complete..."
+          sleep 60
+          
+          # Get project status
+          echo "📋 Getting project information..."
+          railway status || echo "Status command may not be available"
+          
+          # List current project info
+          echo "📋 Project details:"
+          railway list || echo "List command may not be available"
+          
+          # Show variables to confirm they're set
+          echo "📋 Environment variables:"
+          railway variables || echo "Variables command may not be available"
+          
+          echo ""
+          echo "📋 Deployment Summary:"
+          echo "Practice: ${{ inputs.practice_name }}"
+          echo "Project: $PROJECT_NAME"
+          echo "Environment: production"
+          echo "Expected URL: https://${{ inputs.practice_id }}-demo-production.up.railway.app"
+          echo ""
+          echo "💡 Check Railway dashboard for deployment status and domain:"
+          echo "🔗 https://railway.app/dashboard"
+          echo ""
+          echo "✅ Deployment process completed!"
+          echo "⏳ Allow 2-3 minutes for full deployment and domain propagation"

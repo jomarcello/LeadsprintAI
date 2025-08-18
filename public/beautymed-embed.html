@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BeautyMed Clinic - Voice Assistant</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #ffeaa7 0%, #fab1a0 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .beautymed-embed {
+            max-width: 400px;
+            min-height: 500px;
+            padding: 20px;
+            background: linear-gradient(135deg, #ffeaa7 0%, #fab1a0 100%);
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            color: #2d3436;
+        }
+        
+        .embed-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+        }
+        
+        .clinic-logo {
+            font-size: 18px;
+            font-weight: bold;
+            color: #e17055;
+        }
+        
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #e17055;
+        }
+        
+        .status-dot.connected {
+            background: #00b894;
+            animation: pulse 2s infinite;
+        }
+        
+        .voice-controls {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        .record-button {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            border: none;
+            background: linear-gradient(135deg, #e17055 0%, #d63031 100%);
+            color: white;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            box-shadow: 0 5px 15px rgba(209, 48, 49, 0.3);
+        }
+        
+        .record-button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 7px 20px rgba(209, 48, 49, 0.4);
+        }
+        
+        .record-button.connected {
+            background: linear-gradient(135deg, #00b894 0%, #00a085 100%);
+            animation: recording-pulse 1.5s infinite;
+        }
+        
+        .response-display {
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 15px;
+            padding: 15px;
+            margin-bottom: 20px;
+            min-height: 80px;
+        }
+        
+        .assistant-name {
+            font-weight: bold;
+            color: #e17055;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        
+        .response-text {
+            line-height: 1.5;
+            font-size: 14px;
+        }
+        
+        .quick-actions {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .quick-action-btn {
+            background: rgba(255, 255, 255, 0.8);
+            border: none;
+            border-radius: 10px;
+            padding: 12px 15px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            color: #2d3436;
+        }
+        
+        .quick-action-btn:hover {
+            background: rgba(255, 255, 255, 1);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+        
+        .quick-action-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .embed-footer {
+            text-align: center;
+            font-size: 12px;
+            color: rgba(45, 52, 54, 0.7);
+            padding-top: 15px;
+            border-top: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top: 2px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        
+        @keyframes recording-pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .error {
+            background: #ff7675;
+            color: white;
+            padding: 10px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="beautymed-embed">
+        <!-- Header -->
+        <div class="embed-header">
+            <div class="clinic-logo">
+                💄 BeautyMed Clinic
+            </div>
+            <div class="status-indicator">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">ยังไม่ได้เชื่อมต่อ</span>
+            </div>
+        </div>
+
+        <!-- Error Display -->
+        <div id="errorDisplay" class="error" style="display: none;"></div>
+
+        <!-- Voice Controls -->
+        <div class="voice-controls">
+            <button class="record-button" id="connectBtn">
+                🎤 เชื่อมต่อเพื่อเริ่มพูด
+            </button>
+        </div>
+
+        <!-- Response Display -->
+        <div class="response-display">
+            <div class="assistant-name">Robin:</div>
+            <div class="response-text" id="responseText">
+                สวัสดีค่ะ! ยินดีต้อนรับสู่ BeautyMed Clinic ดิฉัน Robin ผู้ช่วยนัดหมาย พร้อมช่วยเหลือคุณค่ะ
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="quick-actions">
+            <button class="quick-action-btn" onclick="sendQuickMessage('ขอนัดหมายฉีดโบท็อกซ์ค่ะ')" disabled>
+                จองนัดโบท็อกซ์
+            </button>
+            <button class="quick-action-btn" onclick="sendQuickMessage('อยากสอบถามเรื่องฟิลเลอร์ค่ะ')" disabled>
+                ถามเรื่องฟิลเลอร์
+            </button>
+            <button class="quick-action-btn" onclick="sendQuickMessage('ราคาบริการเท่าไหร่ค่ะ')" disabled>
+                สอบถามราคา
+            </button>
+        </div>
+
+        <!-- Footer -->
+        <div class="embed-footer">
+            🕒 เวลาทำการ: จันทร์-เสาร์ 9:00-18:00
+        </div>
+    </div>
+
+    <script>
+        // BeautyMed Voice Assistant
+        let isConnected = false;
+        let websocket = null;
+        let mediaRecorder = null;
+        let audioChunks = [];
+
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const connectBtn = document.getElementById('connectBtn');
+        const responseText = document.getElementById('responseText');
+        const errorDisplay = document.getElementById('errorDisplay');
+        const quickActionBtns = document.querySelectorAll('.quick-action-btn');
+
+        // Update UI state
+        function updateUI(connected, connecting = false) {
+            isConnected = connected;
+            
+            if (connecting) {
+                statusDot.className = 'status-dot';
+                statusText.textContent = 'กำลังเชื่อมต่อ...';
+                connectBtn.innerHTML = '<div class="spinner"></div>กำลังเชื่อมต่อ...';
+                connectBtn.disabled = true;
+            } else if (connected) {
+                statusDot.className = 'status-dot connected';
+                statusText.textContent = 'เชื่อมต่อแล้ว';
+                connectBtn.innerHTML = '🎙️ พูดได้เลย';
+                connectBtn.className = 'record-button connected';
+                connectBtn.disabled = false;
+                quickActionBtns.forEach(btn => btn.disabled = false);
+            } else {
+                statusDot.className = 'status-dot';
+                statusText.textContent = 'ยังไม่ได้เชื่อมต่อ';
+                connectBtn.innerHTML = '🎤 เชื่อมต่อเพื่อเริ่มพูด';
+                connectBtn.className = 'record-button';
+                connectBtn.disabled = false;
+                quickActionBtns.forEach(btn => btn.disabled = true);
+            }
+        }
+
+        // Show error
+        function showError(message) {
+            errorDisplay.textContent = message;
+            errorDisplay.style.display = 'block';
+            setTimeout(() => {
+                errorDisplay.style.display = 'none';
+            }, 5000);
+        }
+
+        // Connect to voice assistant
+        async function connect() {
+            if (isConnected) {
+                disconnect();
+                return;
+            }
+
+            updateUI(false, true);
+
+            try {
+                // For demo purposes, simulate connection
+                setTimeout(() => {
+                    updateUI(true);
+                    responseText.textContent = 'เชื่อมต่อสำเร็จค่ะ! พูดคุยกับดิฉันได้เลยค่ะ คุณต้องการบริการอะไรคะ?';
+                }, 2000);
+
+                // In real implementation, you would connect to Gemini Live API here
+                // websocket = new WebSocket('wss://generativelanguage.googleapis.com/ws/v1beta/models/gemini-2.0-flash-exp:streamGenerateContent');
+                
+            } catch (error) {
+                updateUI(false);
+                showError('ไม่สามารถเชื่อมต่อได้ กรุณาลองใหม่');
+                console.error('Connection error:', error);
+            }
+        }
+
+        // Disconnect
+        function disconnect() {
+            if (websocket) {
+                websocket.close();
+                websocket = null;
+            }
+            updateUI(false);
+            responseText.textContent = 'สวัสดีค่ะ! ยินดีต้อนรับสู่ BeautyMed Clinic ดิฉัน Robin ผู้ช่วยนัดหมาย พร้อมช่วยเหลือคุณค่ะ';
+        }
+
+        // Send quick message
+        function sendQuickMessage(message) {
+            if (!isConnected) return;
+            
+            // Simulate response
+            const responses = {
+                'ขอนัดหมายฉีดโบท็อกซ์ค่ะ': 'ดีค่ะ! โบท็อกซ์เป็นบริการยอดนิยมของเรา คุณต้องการนัดวันไหนคะ? เราเปิดให้บริการจันทร์-เสาร์ 9:00-18:00 ค่ะ ราคาเริ่มต้น 3,000 บาท',
+                'อยากสอบถามเรื่องฟิลเลอร์ค่ะ': 'ฟิลเลอร์ช่วยเติมเต็มใบหน้าให้ดูอิ่มฟู เราใช้ฟิลเลอร์คุณภาพดีจากต่างประเทศ ราคาเริ่มต้น 8,000 บาทต่อ 1cc คุณสนใจบริเวณไหนคะ?',
+                'ราคาบริการเท่าไหร่ค่ะ': 'รายการราคาบริการหลักๆ ค่ะ:\n• โบท็อกซ์: 3,000-8,000 บาท\n• ฟิลเลอร์: 8,000-15,000 บาท\n• เลเซอร์กำจัดขน: 1,500-5,000 บาท\n• ฟอโตเฟเชียล: 2,500-4,000 บาท\n\nต้องการข้อมูลเพิ่มเติมอะไรคะ?'
+            };
+            
+            setTimeout(() => {
+                responseText.textContent = responses[message] || 'ขอบคุณสำหรับคำถามค่ะ มีอะไรให้ช่วยเหลือเพิ่มเติมไหมคะ?';
+            }, 1000);
+        }
+
+        // Event listeners
+        connectBtn.addEventListener('click', connect);
+
+        // Initialize
+        updateUI(false);
+        
+        console.log('🏥 BeautyMed Voice Assistant Embed loaded');
+    </script>
+</body>
+</html>

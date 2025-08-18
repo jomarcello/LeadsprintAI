@@ -1,0 +1,53 @@
+name: Railway Simple Setup Instructions
+
+on:
+  workflow_dispatch:
+    inputs:
+      practice_id:
+        description: 'Practice ID (e.g., advanced-spine-care)'
+        required: true
+        type: string
+      practice_name:
+        description: 'Practice Name (e.g., Advanced Spine Care)'
+        required: true
+        type: string
+
+jobs:
+  setup-instructions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Generate Railway Setup Instructions
+        run: |
+          echo "🚀 Railway Setup Instructions for ${{ inputs.practice_name }}"
+          echo ""
+          echo "Due to Railway API issues, please set up manually:"
+          echo ""
+          echo "1. 🌐 Go to https://railway.app/new"
+          echo "2. 📝 Create new project: '${{ inputs.practice_id }}-demo'"
+          echo "3. 🔗 Add service from GitHub:"
+          echo "   Repository: jomarcello/Agentsdemo"
+          echo "   Branch: main"
+          echo "4. ⚙️ Set environment variables in Railway dashboard:"
+          echo "   PRACTICE_ID = ${{ inputs.practice_id }}"
+          echo "   NODE_ENV = production"
+          echo "5. 🚀 Click 'Deploy' in Railway dashboard"
+          echo "6. ⏳ Wait for deployment to complete (~2-3 minutes)"
+          echo "7. 🌐 Click 'Generate Domain' in Railway dashboard"
+          echo "8. ✅ Your app will be live!"
+          echo ""
+          echo "Expected URL: https://${{ inputs.practice_id }}-demo-production.up.railway.app"
+          echo ""
+          echo "📋 Project Details:"
+          echo "Practice: ${{ inputs.practice_name }}"
+          echo "ID: ${{ inputs.practice_id }}"
+          echo "Repository: https://github.com/jomarcello/Agentsdemo"
+          echo ""
+          echo "💡 This approach avoids Railway API errors and is more reliable"
+
+      - name: Generate Manual Setup Script
+        run: |
+          echo "💻 For CLI setup instructions, run:"
+          echo "node scripts/manual-railway-setup.js ${{ inputs.practice_id }}"

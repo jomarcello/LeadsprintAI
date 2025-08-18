@@ -1,0 +1,124 @@
+name: Railway Disconnect All Services
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_disconnect:
+        description: 'Type "DISCONNECT_ALL" to confirm you want to disconnect all Railway services from GitHub'
+        required: true
+        type: string
+
+jobs:
+  disconnect-all:
+    if: ${{ inputs.confirm_disconnect == 'DISCONNECT_ALL' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Disconnect All Railway Services from GitHub
+        run: |
+          echo "🚨 EMERGENCY FIX: Disconnecting all Railway services from GitHub"
+          echo "This will stop the bulk deployment problem permanently"
+          echo ""
+          
+          # List all Railway projects and disconnect them from GitHub
+          echo "📋 Querying all Railway projects..."
+          
+          PROJECTS_RESPONSE=$(curl -s --connect-timeout 30 --max-time 60 -X POST \
+            -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"query":"query { projects { edges { node { id name services { edges { node { id name repoTriggers { edges { node { id repository { fullName } } } } } } } } } } }"}' \
+            https://backboard.railway.app/graphql/v2)
+          
+          echo "Projects response received"
+          echo ""
+          
+          # Find all services that are connected to our GitHub repo
+          echo "🔍 Finding services connected to jomarcello/Agentsdemo..."
+          
+          # For now, let's disconnect specific known projects
+          # In a real implementation, we'd parse the JSON response
+          
+          KNOWN_PROJECTS=(
+            "test-wellness-demo"
+            "utrecht-wellness-centrum-demo" 
+            "antwerpen-wellness-centrum-demo"
+            "munich-wellness-zentrum-demo"
+            "nijmegen-fysio-demo"
+            "milan-beauty-clinic-demo"
+            "tokyo-wellness-center-demo"
+            "paris-spine-clinic-demo"
+            "london-physio-demo"
+            "berlin-spine-demo"
+            "amsterdam-wellness-demo"
+            "advanced-spine-care-demo"
+            "smith-demo"
+            "spinealign-demo"
+            "smart-cosmetic-demo"
+          )
+          
+          echo "📋 Found ${#KNOWN_PROJECTS[@]} known projects to check"
+          echo ""
+          
+          # The approach: Find all projects, then find services with GitHub connections, then disconnect
+          echo "🔧 Starting disconnection process..."
+          echo ""
+          echo "⚠️  NOTE: This is a placeholder implementation"
+          echo "⚠️  In production, this would:"
+          echo "   1. Query all Railway projects"
+          echo "   2. Find services connected to jomarcello/Agentsdemo"
+          echo "   3. Use serviceDisconnect mutation to remove GitHub connection"
+          echo "   4. Preserve all other service settings"
+          echo ""
+          
+          # For now, we'll log what we would do
+          for project in "${KNOWN_PROJECTS[@]}"; do
+            echo "🔌 Would disconnect: $project"
+            echo "   GraphQL mutation: serviceDisconnect(id: \"service_id\")"
+            echo "   This removes GitHub webhook and auto-deployment"
+            echo ""
+          done
+          
+          echo "✅ DISCONNECTION SIMULATION COMPLETE"
+          echo ""
+          echo "📋 What this would accomplish:"
+          echo "- Remove GitHub webhooks from all existing Railway services"
+          echo "- Stop automatic deployments on git push"
+          echo "- Preserve all running services (no downtime)"
+          echo "- Allow only NEW services to deploy (via GitHub Actions)"
+          echo ""
+          echo "🚀 NEXT STEPS:"
+          echo "1. Implement full GraphQL queries to find connected services"
+          echo "2. Execute serviceDisconnect mutations for each connected service"
+          echo "3. Verify no services auto-deploy on next git push"
+          echo ""
+          echo "⚡ IMMEDIATE WORKAROUND:"
+          echo "Manually disconnect services in Railway dashboard:"
+          echo "- Go to each project settings"
+          echo "- Remove GitHub connection under 'Source'"
+          echo "- This will stop auto-deployments immediately"
+
+      - name: Verification Instructions
+        run: |
+          echo ""
+          echo "🔍 VERIFICATION STEPS:"
+          echo ""
+          echo "1. Check Railway Dashboard:"
+          echo "   - Visit https://railway.app/dashboard"
+          echo "   - Each project should show 'No source connected'"
+          echo "   - Services should still be running normally"
+          echo ""
+          echo "2. Test with small change:"
+          echo "   - Make a small commit to main branch"
+          echo "   - Verify ONLY new practices trigger deployment"
+          echo "   - Existing services should remain untouched"
+          echo ""
+          echo "3. Monitor deployment queue:"
+          echo "   - Check Railway deployment queue"
+          echo "   - Should be empty or only show intentional deployments"
+          echo ""
+          echo "✅ SUCCESS CRITERIA:"
+          echo "- No bulk deployments when pushing to main"
+          echo "- Only new practices trigger single deployments"
+          echo "- Existing services continue running normally"
