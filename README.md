@@ -26,6 +26,54 @@ Leadsprint AI Platform
 └── 🎙️ ElevenLabs Integration       # Voice AI assistants
 ```
 
+## 🔄 Automation Workflow
+
+```mermaid
+graph TD
+    A[🎯 User Request/Trigger] --> B[🤖 Leadsprint Agent Activated]
+    B --> C[🔍 Healthcare Target Discovery]
+    C --> D[🌐 Web Scraping via Playwright MCP]
+    
+    D --> E[📊 Practice Data Extraction]
+    E --> F{📋 Lead Validation}
+    
+    F -->|✅ Valid| G[💾 Store in Notion CRM]
+    F -->|❌ Invalid| H[⚠️ Skip & Log Error]
+    
+    G --> I[📁 Create GitHub Repository]
+    I --> J[🎨 Personalize Demo Template]
+    J --> K[📤 Push to GitHub]
+    K --> L[🚂 Deploy to Railway]
+    L --> M[🌍 Generate Domain]
+    M --> N[🎙️ Setup ElevenLabs Voice AI]
+    N --> O[✅ Live Demo Ready]
+    
+    O --> P[📧 Update Notion with Demo URL]
+    P --> Q[🔄 Ready for Next Lead]
+    
+    H --> Q
+    
+    R[⚡ MCP Integrations] --> S[Playwright - Web Scraping]
+    R --> T[Notion - CRM Storage] 
+    R --> U[Railway - Deployments]
+    R --> V[ElevenLabs - Voice AI]
+    R --> W[GitHub - Repository Management]
+```
+
+**Workflow Steps:**
+1. **🎯 Trigger**: Agent activation via API or scheduled task
+2. **🔍 Discovery**: Target healthcare practice websites 
+3. **🌐 Scraping**: Extract practice data using Playwright MCP
+4. **📋 Validation**: Verify data completeness and accuracy
+5. **💾 Storage**: Save lead to Notion CRM database
+6. **📁 Repository**: Create dedicated GitHub repo per practice
+7. **🎨 Personalization**: Customize Next.js demo with scraped data
+8. **🚂 Deployment**: Automated Railway service deployment
+9. **🌍 Domain**: Generate custom demo URL
+10. **🎙️ Voice AI**: Configure ElevenLabs assistant
+11. **✅ Ready**: Live personalized demo accessible
+12. **📧 Update**: CRM updated with demo URL and status
+
 ## ⚡ Quick Start
 
 ### Prerequisites
