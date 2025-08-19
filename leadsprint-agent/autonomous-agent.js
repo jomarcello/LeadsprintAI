@@ -398,30 +398,67 @@ class AutonomousHealthcareAgent {
       // Clone repository
       execSync(`git clone ${repository.clone_url} ${repoPath}`, { stdio: 'ignore' });
       
-      // Copy healthcare template from parent directory
-      const templatePath = '/Users/jovannitilborg/Downloads/Agentsdemo-main';
-      execSync(`rsync -av --exclude='.git' --exclude='node_modules' ${templatePath}/src/ ${repoPath}/src/`, { stdio: 'ignore' });
-      execSync(`cp ${templatePath}/package.json ${templatePath}/next.config.ts ${templatePath}/tailwind.config.js ${templatePath}/postcss.config.mjs ${templatePath}/tsconfig.json ${repoPath}/`, { stdio: 'ignore' });
-      
-      // Personalize practice-config.ts
-      await this.updatePracticeConfig(repoPath, practiceData, agentId);
-      
-      // Update CSS with brand colors
-      await this.updateBrandingStyling(repoPath, practiceData.brandColors);
-      
-      // Create environment file
-      await this.createEnvFile(repoPath, practiceData);
+      // Generate complete AI Voice Agent healthcare template inline
+      await this.generateCompleteTemplate(repoPath, practiceData, agentId);
       
       // Commit and push changes
       execSync(`cd ${repoPath} && git add .`, { stdio: 'ignore' });
-      execSync(`cd ${repoPath} && git commit -m "🎯 Personalized demo for ${practiceData.company}"`, { stdio: 'ignore' });
+      execSync(`cd ${repoPath} && git commit -m "🎯 AI Voice Agent Demo for ${practiceData.company}"`, { stdio: 'ignore' });
       execSync(`cd ${repoPath} && git push origin main`, { stdio: 'ignore' });
       
-      console.log(`   ✅ Personalized and pushed to ${repository.name}`);
+      console.log(`   ✅ Generated template and pushed to ${repository.name}`);
       
     } catch (error) {
       throw new Error(`Repository personalization failed: ${error.message}`);
     }
+  }
+
+  async generateCompleteTemplate(repoPath, practiceData, agentId) {
+    // Create directory structure
+    execSync(`mkdir -p ${repoPath}/src/app ${repoPath}/src/lib`, { stdio: 'ignore' });
+    
+    // Generate package.json
+    const packageJson = {
+      "name": `${practiceData.practiceId}-demo`,
+      "version": "0.1.0",
+      "private": true,
+      "scripts": {
+        "dev": "next dev",
+        "build": "next build",
+        "start": "next start"
+      },
+      "dependencies": {
+        "react": "^18",
+        "react-dom": "^18",
+        "next": "14.0.4",
+        "lucide-react": "^0.263.1"
+      },
+      "devDependencies": {
+        "typescript": "^5",
+        "@types/node": "^20",
+        "@types/react": "^18",
+        "@types/react-dom": "^18",
+        "autoprefixer": "^10.0.1",
+        "postcss": "^8",
+        "tailwindcss": "^3.3.0"
+      }
+    };
+    await fs.writeFile(`${repoPath}/package.json`, JSON.stringify(packageJson, null, 2));
+    
+    // Generate page.tsx with AI Voice Agent demo
+    const pageContent = this.generatePageComponent(practiceData);
+    await fs.writeFile(`${repoPath}/src/app/page.tsx`, pageContent);
+    
+    // Generate practice-config.ts
+    const configContent = this.generatePracticeConfig(practiceData, agentId);
+    await fs.writeFile(`${repoPath}/src/lib/practice-config.ts`, configContent);
+    
+    // Generate layout.tsx
+    const layoutContent = this.generateLayoutComponent(practiceData);
+    await fs.writeFile(`${repoPath}/src/app/layout.tsx`, layoutContent);
+    
+    // Generate Next.js config files
+    await this.generateConfigFiles(repoPath, practiceData);
   }
 
   async deployToRailway(practiceData, repository) {
@@ -510,8 +547,68 @@ class AutonomousHealthcareAgent {
     return `You are the professional appointment scheduling assistant at ${practiceData.company} with ${practiceData.contactName}. Help patients schedule ${practiceData.practiceType} treatments at ${practiceData.location}.`;
   }
 
+  generateComprehensiveSystemPrompt(practiceData) {
+    const basePrompt = `You are Robin, the AI appointment assistant at ${practiceData.company} in ${practiceData.location}. Your primary purpose is to help patients schedule appointments, provide information about treatments, and answer questions about clinic services.
+
+CRITICAL INSTRUCTION: NEVER say you cannot check availability or schedule appointments. ALWAYS provide realistic available appointment options when asked about scheduling.
+
+IDENTITY & ROLE:
+- You are Robin, a friendly and professional AI ${practiceData.practiceType} assistant
+- You work for ${practiceData.company}, a specialized ${practiceData.practiceType} practice
+- ${practiceData.contactName} provides expert ${practiceData.practiceType} care
+- Your main goal is to help patients book appointments and get treatment information
+
+SERVICES OFFERED:
+${practiceData.services.map(s => `- ${s}: Professional ${practiceData.practiceType} treatment`).join('\n')}
+
+AVAILABILITY HANDLING:
+When asked about availability, ALWAYS respond with realistic options like:
+- "I'd be happy to help you schedule! Let me check ${practiceData.contactName}'s calendar..."
+- "For consultations I have Tuesday 14:00, Thursday 11:00 or Friday 16:00"
+- "This week I can offer Monday 15:30, Wednesday 10:00 or Friday 13:00"
+
+CLINIC INFORMATION:
+- Located at ${practiceData.location}
+- ${practiceData.contactName} specializes in ${practiceData.practiceType} treatments
+- Professional consultation and assessment available
+- Focus on high-quality patient care and results
+
+CONVERSATION STYLE:
+- Be professional, caring, and knowledgeable
+- Use confident language about treatment expertise
+- Ask about specific concerns and desired outcomes
+- Emphasize safety and professional standards`;
+    
+    return basePrompt;
+  }
+
+  generateTagline(practiceType) {
+    const taglines = {
+      'beauty': 'Expert Beauty & Aesthetic Treatments',
+      'chiropractic': 'Comprehensive Spine Care & Pain Relief',
+      'wellness': 'Holistic Wellness for Mind, Body & Soul',
+      'fysio': 'Professional Physiotherapy & Rehabilitation'
+    };
+    
+    return taglines[practiceType] || `Professional ${practiceType} Care`;
+  }
+
+  generateFocus(practiceType) {
+    const focuses = {
+      'beauty': 'Aesthetic treatments and cosmetic procedures',
+      'chiropractic': 'Spinal health and pain management', 
+      'wellness': 'Natural healing and preventive wellness care',
+      'fysio': 'Physical therapy and movement rehabilitation'
+    };
+    
+    return focuses[practiceType] || `${practiceType} treatments and care`;
+  }
+
   async updatePracticeConfig(repoPath, practiceData, agentId) {
     const configPath = `${repoPath}/src/lib/practice-config.ts`;
+    
+    // Generate comprehensive system prompt based on practice type
+    const systemPrompt = this.generateComprehensiveSystemPrompt(practiceData);
     
     const practiceConfig = `
   '${practiceData.practiceId}': {
@@ -520,26 +617,32 @@ class AutonomousHealthcareAgent {
     doctor: '${practiceData.contactName}',
     location: '${practiceData.location}',
     agentId: '${agentId}',
-    type: '${practiceData.practiceType}' as const,
+    type: '${practiceData.practiceType}',
     
     chat: {
       assistantName: 'Robin',
-      initialMessage: 'Thank you for contacting ${practiceData.company}! I am Robin, your ${practiceData.practiceType} assistant. How can I help you today?',
-      systemPrompt: \`You are Robin, the assistant at ${practiceData.company}. Help patients with ${practiceData.practiceType} services.\`
+      initialMessage: 'Thank you for contacting ${practiceData.company}! I am Robin, your ${practiceData.practiceType} assistant. I can help you schedule appointments with ${practiceData.contactName}. Which service interests you today?',
+      systemPrompt: \`${systemPrompt}\`
+    },
+    
+    voice: {
+      firstMessage: 'Thank you for calling ${practiceData.company}! This is Robin, your AI ${practiceData.practiceType} assistant. I can help you schedule appointments with ${practiceData.contactName}. How can I help you today?'
     },
     
     services: ${JSON.stringify(practiceData.services.map(s => ({name: s, description: s})), null, 6)},
     
     branding: {
       primaryColor: '${practiceData.brandColors.primary}',
-      tagline: 'Your ${practiceData.practiceType} assistant'
+      tagline: '${this.generateTagline(practiceData.practiceType)}',
+      focus: '${this.generateFocus(practiceData.practiceType)}'
     }
   },`;
 
     try {
       let originalConfig = await fs.readFile(configPath, 'utf8');
       
-      const configsIndex = originalConfig.indexOf('export const practiceConfigs: Record<string, PracticeConfig> = {');
+      // Look for the correct export name in our new template
+      const configsIndex = originalConfig.indexOf('export const practiceTemplates: Record<string, PracticeConfig> = {');
       if (configsIndex !== -1) {
         const insertIndex = originalConfig.indexOf('{', configsIndex) + 1;
         originalConfig = originalConfig.slice(0, insertIndex) + practiceConfig + originalConfig.slice(insertIndex);
@@ -559,6 +662,7 @@ class AutonomousHealthcareAgent {
 
   async createEnvFile(repoPath, practiceData) {
     const envContent = `
+NEXT_PUBLIC_PRACTICE_ID=${practiceData.practiceId}
 PRACTICE_ID=${practiceData.practiceId}
 NODE_ENV=production
 NEXT_PUBLIC_PRACTICE_NAME="${practiceData.company}"
@@ -573,6 +677,319 @@ NEXT_PUBLIC_BRAND_PRIMARY="${practiceData.brandColors.primary}"
     } catch (error) {
       console.log(`   ⚠️ Environment file warning: ${error.message}`);
     }
+  }
+
+  generatePageComponent(practiceData) {
+    return `'use client';
+
+import { getCurrentPractice } from '@/lib/practice-config';
+import { Phone, Mic, Calendar, Clock, Star, CheckCircle, Users, MessageSquare, Zap, Shield } from 'lucide-react';
+
+export default function AIVoiceAgentDemo() {
+  const practice = getCurrentPractice();
+  
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-white">
+      {/* Header */}
+      <header className="bg-white/80 backdrop-blur-sm border-b border-gray-200 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center">
+              <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center mr-3">
+                <Mic className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-gray-900">{practice.name}</h1>
+                <p className="text-sm text-gray-600">AI Voice Agent Demo</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+                <div className="w-2 h-2 bg-white rounded-full"></div>
+              </div>
+              <span className="text-sm font-medium text-gray-700">Live Demo</span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Hero Section */}
+        <div className="text-center mb-8 sm:mb-12">
+          <div className="mb-6">
+            <div className="w-16 h-16 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <MessageSquare className="w-8 h-8 text-white" />
+            </div>
+            <span className="text-sm font-medium text-blue-600 bg-blue-100 px-3 py-1 rounded-full">
+              Interactive Demo Presentation
+            </span>
+          </div>
+          
+          <h2 className="text-3xl sm:text-5xl font-bold text-gray-900 mb-4 sm:mb-6">
+            Meet Robin: Your AI <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">Appointment Assistant</span>
+          </h2>
+          
+          <p className="text-lg text-gray-600 mb-8 max-w-4xl mx-auto">
+            Experience how <strong>Robin</strong> handles patient calls with human-like conversations, schedules appointments instantly, 
+            and answers questions about {practice.name} services - completely automated, 24/7.
+          </p>
+        </div>
+
+        {/* Live Demo Section */}
+        <div className="mb-8 sm:mb-12">
+          <div className="text-center mb-8">
+            <h3 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-4">Live Demo - Try Robin Now</h3>
+            <p className="text-gray-600 max-w-3xl mx-auto">
+              Click below to experience exactly what your patients will hear when they call {practice.name}. 
+              Robin knows about all {practice.services.length} of your {practice.type} services and {practice.doctor}'s expertise.
+            </p>
+          </div>
+          
+          <div className="bg-white rounded-2xl shadow-xl p-6 sm:p-8 border">
+            <div className="text-center mb-6">
+              <div className="w-20 h-20 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Phone className="w-10 h-10 text-white" />
+              </div>
+              <h2 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                Call {practice.name}
+              </h2>
+              <p className="text-gray-600 mt-2">
+                Experience how patients will interact with your AI {practice.type} assistant. 
+                Click "Start Call" to begin a live conversation with Robin about scheduling treatments with {practice.doctor}.
+              </p>
+            </div>
+
+            <div className="text-center mb-6">
+              <button className="relative inline-flex items-center gap-4 px-8 py-6 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold text-lg rounded-2xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200">
+                <Phone className="w-6 h-6" />
+                Start Call
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Services Section */}
+        <div className="mb-8 sm:mb-12">
+          <h3 className="text-2xl sm:text-3xl font-bold text-center text-gray-900 mb-8">Robin Knows All Your Treatments</h3>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {practice.services.map((service, index) => (
+              <div key={index} className="bg-white rounded-xl p-6 shadow-sm border hover:shadow-md transition-shadow">
+                <h4 className="font-semibold text-gray-900 text-sm mb-2">{service.name}</h4>
+                <p className="text-gray-600 text-sm">{service.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </main>
+
+      {/* CTA Section */}
+      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-16">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <h2 className="text-3xl font-bold mb-4">Interested in AI Solutions for {practice.name}?</h2>
+          <p className="text-xl text-blue-100 mb-2">You've seen how Robin handles patient calls perfectly</p>
+          <p className="text-lg text-blue-200 mb-8">
+            Let's explore how AI can help transform your practice's patient experience
+          </p>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <footer className="bg-gray-900 text-white py-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <p className="text-gray-300 mb-2">
+            {practice.name} AI Voice Agent Demo - Experience the Future of {practice.type.charAt(0).toUpperCase() + practice.type.slice(1)} Scheduling
+          </p>
+          <p className="text-gray-400">
+            {practice.doctor} • Powered by AI Technology
+          </p>
+        </div>
+      </footer>
+    </div>
+  );
+}`;
+  }
+
+  generatePracticeConfig(practiceData, agentId) {
+    const systemPrompt = this.generateComprehensiveSystemPrompt(practiceData);
+    
+    return `// Practice Configuration System  
+// AI Voice Agent Demo Template - Generated by Healthcare Automation Agent
+
+export interface PracticeConfig {
+  id: string;
+  name: string;
+  doctor: string;
+  location: string;
+  agentId: string;
+  type: 'chiropractic' | 'wellness' | 'beauty' | 'fysio';
+  
+  chat: {
+    assistantName: string;
+    initialMessage: string;
+    systemPrompt: string;
+  };
+  
+  voice: {
+    firstMessage: string;
+  };
+  
+  services: Array<{
+    name: string;
+    description: string;
+    duration?: string;
+  }>;
+  
+  branding: {
+    primaryColor: string;
+    tagline: string;
+    focus: string;
+  };
+}
+
+export const practiceTemplates: Record<string, PracticeConfig> = {
+  '${practiceData.practiceId}': {
+    id: '${practiceData.practiceId}',
+    name: '${practiceData.company}',
+    doctor: '${practiceData.contactName}',
+    location: '${practiceData.location}',
+    agentId: '${agentId}',
+    type: '${practiceData.practiceType}',
+    
+    chat: {
+      assistantName: 'Robin',
+      initialMessage: 'Thank you for contacting ${practiceData.company}! I am Robin, your ${practiceData.practiceType} assistant. I can help you schedule appointments with ${practiceData.contactName}. Which service interests you today?',
+      systemPrompt: \`${systemPrompt}\`
+    },
+    
+    voice: {
+      firstMessage: 'Thank you for calling ${practiceData.company}! This is Robin, your AI ${practiceData.practiceType} assistant. I can help you schedule appointments with ${practiceData.contactName}. How can I help you today?'
+    },
+    
+    services: ${JSON.stringify(practiceData.services.map(s => ({name: s, description: s})), null, 6)},
+    
+    branding: {
+      primaryColor: '${practiceData.brandColors.primary}',
+      tagline: '${this.generateTagline(practiceData.practiceType)}',
+      focus: '${this.generateFocus(practiceData.practiceType)}'
+    }
+  }
+};
+
+export function getCurrentPractice(): PracticeConfig {
+  const practiceId = process.env.NEXT_PUBLIC_PRACTICE_ID || process.env.PRACTICE_ID;
+  
+  if (practiceId && practiceTemplates[practiceId]) {
+    return practiceTemplates[practiceId];
+  }
+  
+  return practiceTemplates['${practiceData.practiceId}'];
+}`;
+  }
+
+  generateLayoutComponent(practiceData) {
+    return `import type { Metadata } from 'next'
+import { Inter } from 'next/font/google'
+import './globals.css'
+
+const inter = Inter({ subsets: ['latin'] })
+
+export const metadata: Metadata = {
+  title: '${practiceData.company} - AI Voice Agent Demo',
+  description: 'Experience how Robin AI assistant handles patient calls for ${practiceData.company} with ${practiceData.contactName}',
+}
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  return (
+    <html lang="en">
+      <body className={inter.className}>{children}</body>
+    </html>
+  )
+}`;
+  }
+
+  async generateConfigFiles(repoPath, practiceData) {
+    // Generate Next.js config
+    const nextConfig = \`/** @type {import('next').NextConfig} */
+const nextConfig = {
+  generateBuildId: async () => {
+    return 'healthcare-ai-agent-demo-v1.0'
+  }
+}
+
+module.exports = nextConfig\`;
+    await fs.writeFile(\`\${repoPath}/next.config.js\`, nextConfig);
+
+    // Generate Tailwind config
+    const tailwindConfig = \`/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: [
+    './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
+    './src/components/**/*.{js,ts,jsx,tsx,mdx}',
+    './src/app/**/*.{js,ts,jsx,tsx,mdx}',
+  ],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+}\`;
+    await fs.writeFile(\`\${repoPath}/tailwind.config.js\`, tailwindConfig);
+
+    // Generate PostCSS config
+    const postcssConfig = \`module.exports = {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+}\`;
+    await fs.writeFile(\`\${repoPath}/postcss.config.js\`, postcssConfig);
+
+    // Generate globals.css
+    const globalsCss = \`@tailwind base;
+@tailwind components;
+@tailwind utilities;\`;
+    execSync(\`mkdir -p \${repoPath}/src/app\`, { stdio: 'ignore' });
+    await fs.writeFile(\`\${repoPath}/src/app/globals.css\`, globalsCss);
+
+    // Generate TypeScript config
+    const tsConfig = {
+      "compilerOptions": {
+        "target": "es5",
+        "lib": ["dom", "dom.iterable", "es6"],
+        "allowJs": true,
+        "skipLibCheck": true,
+        "strict": true,
+        "noEmit": true,
+        "esModuleInterop": true,
+        "module": "esnext",
+        "moduleResolution": "bundler",
+        "resolveJsonModule": true,
+        "isolatedModules": true,
+        "jsx": "preserve",
+        "incremental": true,
+        "plugins": [
+          {
+            "name": "next"
+          }
+        ],
+        "baseUrl": ".",
+        "paths": {
+          "@/*": ["./src/*"]
+        }
+      },
+      "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+      "exclude": ["node_modules"]
+    };
+    await fs.writeFile(\`\${repoPath}/tsconfig.json\`, JSON.stringify(tsConfig, null, 2));
+
+    // Generate environment file
+    const envContent = \`NEXT_PUBLIC_PRACTICE_ID=\${practiceData.practiceId}
+PRACTICE_ID=\${practiceData.practiceId}
+NODE_ENV=production\`;
+    await fs.writeFile(\`\${repoPath}/.env.local\`, envContent);
   }
 
   sleep(ms) {
