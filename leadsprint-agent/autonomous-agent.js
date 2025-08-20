@@ -1460,8 +1460,8 @@ NODE_ENV=production`;
 
   start() {
     this.app.listen(this.port, () => {
-      console.log(chalk.green('🤖 AUTONOMOUS HEALTHCARE AGENT STARTED'));
-      console.log(chalk.green('====================================='));
+      console.log(chalk.green('🤖 AUTONOMOUS HEALTHCARE AGENT STARTED - EXA SEARCH VERSION'));
+      console.log(chalk.green('==============================================================='));
       console.log(`🌐 Server: http://localhost:${this.port}`);
       console.log(`📊 Health: http://localhost:${this.port}/health`);
       console.log(`📋 Status: http://localhost:${this.port}/status`);
