@@ -16,7 +16,7 @@ Automatically creates Railway projects with:
 ```bash
 # Get token from: https://github.com/settings/tokens
 # Required scopes: repo, workflow
-export GITHUB_TOKEN="ghp_your_token_here"
+export GITHUB_TOKEN="ghp_REDACTED_TOKEN"
 ```
 
 ### 2. Railway Token

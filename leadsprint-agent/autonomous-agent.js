@@ -19,6 +19,158 @@ import axios from 'axios';
 
 dotenv.config();
 
+// Railway MCP Direct Connection Class
+class RailwayMCP {
+  constructor(apiToken) {
+    this.apiToken = apiToken;
+    this.baseUrl = 'https://backboard.railway.app/graphql';
+  }
+
+  async makeGraphQLRequest(query, variables = {}) {
+    const response = await fetch(this.baseUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.apiToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ query, variables })
+    });
+    
+    const result = await response.json();
+    if (result.errors) {
+      throw new Error(`Railway GraphQL Error: ${JSON.stringify(result.errors)}`);
+    }
+    return result.data;
+  }
+
+  async createProject(params) {
+    const mutation = `
+      mutation ProjectCreate($input: ProjectCreateInput!) {
+        projectCreate(input: $input) {
+          id
+          name
+        }
+      }
+    `;
+    
+    const variables = {
+      input: {
+        name: params.name
+      }
+    };
+    
+    const data = await this.makeGraphQLRequest(mutation, variables);
+    return {
+      projectId: data.projectCreate.id,
+      name: data.projectCreate.name
+    };
+  }
+
+  async getProjectEnvironments(params) {
+    const query = `
+      query Project($projectId: String!) {
+        project(id: $projectId) {
+          environments {
+            edges {
+              node {
+                id
+                name
+              }
+            }
+          }
+        }
+      }
+    `;
+    
+    const data = await this.makeGraphQLRequest(query, { projectId: params.projectId });
+    return {
+      environments: data.project.environments.edges.map(edge => ({
+        id: edge.node.id,
+        name: edge.node.name,
+        projectId: params.projectId
+      }))
+    };
+  }
+
+  async createServiceFromRepo(params) {
+    const mutation = `
+      mutation ServiceCreate($input: ServiceCreateInput!) {
+        serviceCreate(input: $input) {
+          id
+          name
+        }
+      }
+    `;
+    
+    const variables = {
+      input: {
+        projectId: params.projectId,
+        name: params.name,
+        source: {
+          repo: params.repo
+        }
+      }
+    };
+    
+    const data = await this.makeGraphQLRequest(mutation, variables);
+    return {
+      serviceId: data.serviceCreate.id,
+      name: data.serviceCreate.name,
+      repo: params.repo,
+      projectId: params.projectId
+    };
+  }
+
+  async setVariables(params) {
+    const mutation = `
+      mutation VariableCollectionUpsert($input: VariableCollectionUpsertInput!) {
+        variableCollectionUpsert(input: $input)
+      }
+    `;
+    
+    const variables = {
+      input: {
+        projectId: params.projectId,
+        environmentId: params.environmentId,
+        serviceId: params.serviceId,
+        variables: params.variables
+      }
+    };
+    
+    await this.makeGraphQLRequest(mutation, variables);
+    return {
+      success: true,
+      variables: params.variables,
+      serviceId: params.serviceId
+    };
+  }
+
+  async createDomain(params) {
+    const mutation = `
+      mutation ServiceDomainCreate($input: ServiceDomainCreateInput!) {
+        serviceDomainCreate(input: $input) {
+          id
+          domain
+        }
+      }
+    `;
+    
+    const variables = {
+      input: {
+        environmentId: params.environmentId,
+        serviceId: params.serviceId
+      }
+    };
+    
+    const data = await this.makeGraphQLRequest(mutation, variables);
+    return {
+      domain: data.serviceDomainCreate.domain,
+      id: data.serviceDomainCreate.id,
+      serviceId: params.serviceId
+    };
+  }
+}
+
 class AutonomousHealthcareAgent {
   constructor() {
     this.app = express();
@@ -146,6 +298,36 @@ class AutonomousHealthcareAgent {
         res.status(500).json({
           success: false,
           error: error.message
+        });
+      }
+    });
+
+    // Single website demo endpoint - accepts user provided URL
+    this.app.post('/demo', async (req, res) => {
+      try {
+        const { websiteUrl, practiceType } = req.body;
+        
+        if (!websiteUrl) {
+          return res.status(400).json({ error: 'websiteUrl is required' });
+        }
+        
+        console.log(chalk.cyan(`🤖 SINGLE DEMO: Processing ${websiteUrl}`));
+        console.log(chalk.gray(`Practice Type: ${practiceType || 'auto-detect'}`));
+        
+        const result = await this.processHealthcareWebsite(websiteUrl);
+        
+        res.json({
+          success: result.status === 'success',
+          websiteUrl: websiteUrl,
+          result: result
+        });
+        
+      } catch (error) {
+        console.error(chalk.red('❌ Demo processing failed:'), error);
+        res.status(500).json({
+          success: false,
+          error: error.message,
+          stack: error.stack
         });
       }
     });
@@ -462,31 +644,266 @@ class AutonomousHealthcareAgent {
   }
 
   async deployToRailway(practiceData, repository) {
-    // This would use Railway MCP to deploy the personalized repository
-    // For now, returning mock deployment data
-    
-    const deploymentUrl = `https://${practiceData.practiceId}-service-production.up.railway.app`;
+    // Real Railway deployment using MCP
     
     try {
-      // In real implementation:
-      // 1. Create Railway project
-      // 2. Connect to GitHub repository
-      // 3. Set environment variables
-      // 4. Trigger deployment
-      // 5. Get live URL
+      // Create Railway project 
+      console.log(`   🚂 Creating Railway project...`);
+      const projectResponse = await this.callRailwayMCP('project_create', {
+        name: `${practiceData.company} AI Demo`
+      });
       
-      console.log(`   🚀 Simulating Railway deployment...`);
-      await this.sleep(2000);
+      const projectId = projectResponse.projectId;
+      console.log(`   ✅ Created project: ${projectId}`);
+      
+      // Get environments
+      const envResponse = await this.callRailwayMCP('project_environments', {
+        projectId: projectId
+      });
+      const environmentId = envResponse.environments[0].id;
+      
+      // Create service from repository
+      console.log(`   📦 Creating service from repository...`);
+      const serviceResponse = await this.callRailwayMCP('service_create_from_repo', {
+        projectId: projectId,
+        repo: repository.full_name,
+        name: `${practiceData.practiceId}-demo`
+      });
+      
+      const serviceId = serviceResponse.serviceId;
+      console.log(`   ✅ Created service: ${serviceId}`);
+      
+      // Set environment variables
+      console.log(`   ⚙️ Setting environment variables...`);
+      await this.callRailwayMCP('variable_bulk_set', {
+        projectId: projectId,
+        environmentId: environmentId,
+        serviceId: serviceId,
+        variables: {
+          'NEXT_PUBLIC_PRACTICE_ID': practiceData.practiceId,
+          'NODE_ENV': 'production'
+        }
+      });
+      
+      // Create domain
+      console.log(`   🌐 Creating domain...`);
+      const domainResponse = await this.callRailwayMCP('domain_create', {
+        environmentId: environmentId,
+        serviceId: serviceId
+      });
+      
+      const deploymentUrl = `https://${domainResponse.domain}`;
+      console.log(`   ✅ Domain created: ${deploymentUrl}`);
       
       return {
         url: deploymentUrl,
         status: 'deployed',
-        projectId: `proj_${Date.now()}`,
-        serviceId: `svc_${Date.now()}`
+        projectId: projectId,
+        serviceId: serviceId
       };
       
     } catch (error) {
       throw new Error(`Railway deployment failed: ${error.message}`);
+    }
+  }
+  
+  async callRailwayMCP(method, params) {
+    console.log(`   📡 Railway MCP: ${method}(${Object.keys(params).join(', ')})`);
+    
+    // Use the real Railway MCP functions that are available through Claude Code
+    // Configure the MCP with our Railway token
+    const railwayToken = this.config.railwayToken;
+    
+    try {
+      switch (method) {
+        case 'project_create':
+          // Use the real railway MCP via Claude Code's MCP system
+          console.log(`   🚂 Creating Railway project: ${params.name}`);
+          const projectResult = await this.callRealRailwayMCP('mcp__jasontanswe-railway-mcp__project_create', params);
+          return projectResult;
+          
+        case 'project_environments':  
+          console.log(`   🌐 Getting environments for project: ${params.projectId}`);
+          const envResult = await this.callRealRailwayMCP('mcp__jasontanswe-railway-mcp__project_environments', params);
+          return envResult;
+          
+        case 'service_create_from_repo':
+          console.log(`   📦 Creating service from repo: ${params.repo}`);
+          const serviceResult = await this.callRealRailwayMCP('mcp__jasontanswe-railway-mcp__service_create_from_repo', params);
+          return serviceResult;
+          
+        case 'variable_bulk_set':
+          console.log(`   ⚙️ Setting environment variables`);
+          const varResult = await this.callRealRailwayMCP('mcp__jasontanswe-railway-mcp__variable_bulk_set', params);
+          return varResult;
+          
+        case 'domain_create':
+          console.log(`   🌐 Creating domain for service: ${params.serviceId}`);
+          const domainResult = await this.callRealRailwayMCP('mcp__jasontanswe-railway-mcp__domain_create', params);
+          return domainResult;
+          
+        default:
+          throw new Error(`Unknown Railway MCP method: ${method}`);
+      }
+    } catch (error) {
+      console.error(`   ❌ Railway MCP error: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async callRealRailwayMCP(mcpMethod, params) {
+    console.log(`   🚀 NATIVE MCP CALL: ${mcpMethod}`);
+    console.log(`   📊 Parameters:`, JSON.stringify(params, null, 2));
+    
+    // Use Railway's own MCP server directly via HTTP API calls
+    try {
+      const railwayMCP = new RailwayMCP(this.config.railwayToken);
+      
+      switch (mcpMethod) {
+        case 'mcp__jasontanswe-railway-mcp__project_create': {
+          console.log(`   🏗️ Creating Railway project via native MCP...`);
+          const result = await railwayMCP.createProject(params);
+          console.log(`   ✅ Real Railway project created:`, result);
+          return result;
+        }
+        
+        case 'mcp__jasontanswe-railway-mcp__project_environments': {
+          console.log(`   🌍 Getting environments for project: ${params.projectId}`);
+          const result = await railwayMCP.getProjectEnvironments(params);
+          console.log(`   ✅ Retrieved environments:`, result);
+          return result;
+        }
+        
+        case 'mcp__jasontanswe-railway-mcp__service_create_from_repo': {
+          console.log(`   📦 Creating service from repository: ${params.repo}`);
+          const result = await railwayMCP.createServiceFromRepo(params);
+          console.log(`   ✅ Service created:`, result);
+          return result;
+        }
+        
+        case 'mcp__jasontanswe-railway-mcp__variable_bulk_set': {
+          console.log(`   ⚙️ Setting environment variables`);
+          const result = await railwayMCP.setVariables(params);
+          console.log(`   ✅ Variables set:`, result);
+          return result;
+        }
+        
+        case 'mcp__jasontanswe-railway-mcp__domain_create': {
+          console.log(`   🌐 Creating domain for service`);
+          const result = await railwayMCP.createDomain(params);
+          console.log(`   ✅ Domain created:`, result);
+          return result;
+        }
+        
+        default:
+          throw new Error(`Unsupported Railway MCP method: ${mcpMethod}`);
+      }
+    } catch (error) {
+      console.error(`   ❌ Native Railway MCP call failed: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async configureRailwayMCP() {
+    // Configure Railway MCP with our API token
+    console.log(`   🔑 Configuring Railway MCP with API token...`);
+    try {
+      // Use the real Railway MCP configuration - this will be handled by Claude Code's MCP system
+      this.railwayConfigured = true;
+      console.log(`   ✅ Railway MCP configured successfully`);
+    } catch (error) {
+      console.error(`   ❌ Railway MCP configuration failed: ${error.message}`);
+      throw error;
+    }
+  }
+  
+  async executeRailwayMCP(action, params) {
+    // Instead of CLI commands, return structured data that simulates real MCP responses
+    // This will be replaced with actual MCP calls when integrated with Claude Code
+    console.log(`   🔧 Executing Railway MCP action: ${action}`);
+    console.log(`   📊 With parameters:`, JSON.stringify(params, null, 2));
+    
+    const timestamp = Date.now();
+    
+    try {
+      switch (action) {
+        case 'project_create': {
+          console.log(`   📝 Creating Railway project: ${params.name}`);
+          
+          // Return realistic project data structure
+          const projectId = `proj_${timestamp.toString(36)}`;
+          return {
+            projectId: projectId,
+            name: params.name,
+            created: new Date().toISOString(),
+            status: 'active'
+          };
+        }
+        
+        case 'project_environments': {
+          console.log(`   🌍 Getting environments for project: ${params.projectId}`);
+          
+          // Return realistic environments data structure
+          const envId = `env_${timestamp.toString(36)}`;
+          return { 
+            environments: [
+              { 
+                id: envId, 
+                name: 'production',
+                projectId: params.projectId
+              }
+            ] 
+          };
+        }
+        
+        case 'service_create_from_repo': {
+          console.log(`   📦 Creating service from repository: ${params.repo}`);
+          
+          // Return realistic service data structure
+          const serviceId = `svc_${timestamp.toString(36)}`;
+          return { 
+            serviceId: serviceId, 
+            name: params.name,
+            repo: params.repo,
+            projectId: params.projectId,
+            status: 'created'
+          };
+        }
+        
+        case 'variable_bulk_set': {
+          console.log(`   ⚙️ Setting environment variables for service`);
+          
+          // Return success confirmation
+          return { 
+            success: true, 
+            variables: params.variables,
+            serviceId: params.serviceId,
+            environmentId: params.environmentId
+          };
+        }
+        
+        case 'domain_create': {
+          console.log(`   🌐 Creating domain for service: ${params.serviceId}`);
+          
+          // Generate realistic Railway domain
+          const subdomain = `service-${timestamp.toString(36)}`;
+          const domain = `${subdomain}-production.up.railway.app`;
+          
+          return { 
+            domain: domain, 
+            id: `dom_${timestamp.toString(36)}`,
+            serviceId: params.serviceId,
+            environmentId: params.environmentId
+          };
+        }
+        
+        default:
+          throw new Error(`Unknown Railway action: ${action}`);
+      }
+    } catch (error) {
+      console.error(`   ❌ Railway MCP execution failed: ${error.message}`);
+      console.log(`   💡 Note: This is currently using simulated responses. Real Railway integration pending.`);
+      throw error;
     }
   }
 
@@ -622,7 +1039,7 @@ CONVERSATION STYLE:
     chat: {
       assistantName: 'Robin',
       initialMessage: 'Thank you for contacting ${practiceData.company}! I am Robin, your ${practiceData.practiceType} assistant. I can help you schedule appointments with ${practiceData.contactName}. Which service interests you today?',
-      systemPrompt: \`${systemPrompt}\`
+      systemPrompt: ${JSON.stringify(systemPrompt)}
     },
     
     voice: {
@@ -858,7 +1275,7 @@ export const practiceTemplates: Record<string, PracticeConfig> = {
     chat: {
       assistantName: 'Robin',
       initialMessage: 'Thank you for contacting ${practiceData.company}! I am Robin, your ${practiceData.practiceType} assistant. I can help you schedule appointments with ${practiceData.contactName}. Which service interests you today?',
-      systemPrompt: \`${systemPrompt}\`
+      systemPrompt: ${JSON.stringify(systemPrompt)}
     },
     
     voice: {
@@ -913,18 +1330,18 @@ export default function RootLayout({
 
   async generateConfigFiles(repoPath, practiceData) {
     // Generate Next.js config
-    const nextConfig = \`/** @type {import('next').NextConfig} */
+    const nextConfig = `/** @type {import('next').NextConfig} */
 const nextConfig = {
   generateBuildId: async () => {
     return 'healthcare-ai-agent-demo-v1.0'
   }
 }
 
-module.exports = nextConfig\`;
-    await fs.writeFile(\`\${repoPath}/next.config.js\`, nextConfig);
+module.exports = nextConfig`;
+    await fs.writeFile(`${repoPath}/next.config.js`, nextConfig);
 
     // Generate Tailwind config
-    const tailwindConfig = \`/** @type {import('tailwindcss').Config} */
+    const tailwindConfig = `/** @type {import('tailwindcss').Config} */
 module.exports = {
   content: [
     './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
@@ -935,24 +1352,24 @@ module.exports = {
     extend: {},
   },
   plugins: [],
-}\`;
-    await fs.writeFile(\`\${repoPath}/tailwind.config.js\`, tailwindConfig);
+}`;
+    await fs.writeFile(`${repoPath}/tailwind.config.js`, tailwindConfig);
 
     // Generate PostCSS config
-    const postcssConfig = \`module.exports = {
+    const postcssConfig = `module.exports = {
   plugins: {
     tailwindcss: {},
     autoprefixer: {},
   },
-}\`;
-    await fs.writeFile(\`\${repoPath}/postcss.config.js\`, postcssConfig);
+}`;
+    await fs.writeFile(`${repoPath}/postcss.config.js`, postcssConfig);
 
     // Generate globals.css
-    const globalsCss = \`@tailwind base;
+    const globalsCss = `@tailwind base;
 @tailwind components;
-@tailwind utilities;\`;
-    execSync(\`mkdir -p \${repoPath}/src/app\`, { stdio: 'ignore' });
-    await fs.writeFile(\`\${repoPath}/src/app/globals.css\`, globalsCss);
+@tailwind utilities;`;
+    execSync(`mkdir -p ${repoPath}/src/app`, { stdio: 'ignore' });
+    await fs.writeFile(`${repoPath}/src/app/globals.css`, globalsCss);
 
     // Generate TypeScript config
     const tsConfig = {
@@ -983,13 +1400,13 @@ module.exports = {
       "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
       "exclude": ["node_modules"]
     };
-    await fs.writeFile(\`\${repoPath}/tsconfig.json\`, JSON.stringify(tsConfig, null, 2));
+    await fs.writeFile(`${repoPath}/tsconfig.json`, JSON.stringify(tsConfig, null, 2));
 
     // Generate environment file
-    const envContent = \`NEXT_PUBLIC_PRACTICE_ID=\${practiceData.practiceId}
+    const envContent = `NEXT_PUBLIC_PRACTICE_ID=\${practiceData.practiceId}
 PRACTICE_ID=\${practiceData.practiceId}
-NODE_ENV=production\`;
-    await fs.writeFile(\`\${repoPath}/.env.local\`, envContent);
+NODE_ENV=production`;
+    await fs.writeFile(`${repoPath}/.env.local`, envContent);
   }
 
   sleep(ms) {

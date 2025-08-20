@@ -35,21 +35,6 @@ export interface PracticeConfig {
     tagline: string;
     focus: string;
   };
-  
-  // Template Configuration
-  template: {
-    pageTitle: string;
-    heroTitle: string;
-    heroSubtitle: string;
-    ctaText: string;
-    aboutTitle: string;
-    aboutText: string;
-    servicesTitle: string;
-    contactTitle: string;
-    backgroundGradient: string;
-    cardStyling: string;
-    buttonStyling: string;
-  };
 }
 
 // Essential practice templates for automation
@@ -119,20 +104,6 @@ CONVERSATION STYLE:
       primaryColor: '#2563eb',
       tagline: 'Advanced Spinal Care for Better Living',
       focus: 'Expert chiropractic care and pain relief'
-    },
-    
-    template: {
-      pageTitle: '[PRACTICE_NAME] - Professional Chiropractic Care',
-      heroTitle: 'Expert Chiropractic Care for [LOCATION]',
-      heroSubtitle: 'Professional spinal treatments and pain relief with [DOCTOR_NAME]',
-      ctaText: 'Schedule Your Consultation',
-      aboutTitle: 'About [PRACTICE_NAME]',
-      aboutText: 'At [PRACTICE_NAME], [DOCTOR_NAME] provides expert chiropractic care focused on spinal health, pain relief, and improved mobility. Our modern clinic offers comprehensive treatments for back pain, neck pain, sports injuries, and auto accident recovery.',
-      servicesTitle: 'Our Chiropractic Services',
-      contactTitle: 'Schedule Your Appointment',
-      backgroundGradient: 'bg-gradient-to-br from-blue-50 via-indigo-50 to-blue-100',
-      cardStyling: 'bg-white rounded-xl shadow-lg p-6 border border-blue-100',
-      buttonStyling: 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold px-8 py-4 rounded-lg shadow-lg hover:shadow-xl transition-all duration-300'
     }
   },
 

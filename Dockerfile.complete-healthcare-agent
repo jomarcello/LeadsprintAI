@@ -1,0 +1,46 @@
+# Complete Healthcare Automation Agent
+# Exa MCP + Python Railway MCP + Full Workflow
+
+FROM node:18-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    git \
+    curl \
+    rsync \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python MCP dependencies
+RUN pip3 install --break-system-packages --no-cache-dir \
+    mcp \
+    aiohttp \
+    requests
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files and install Node.js dependencies
+COPY package*.json ./
+RUN npm install
+
+# Copy all application files
+COPY . .
+
+# Configure git
+RUN git config --global user.email "automation@leadsprint.ai" && \
+    git config --global user.name "Leadsprint AI Agent"
+
+# Environment variables
+ENV NODE_ENV=production
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:3001/health || exit 1
+
+# Expose port
+EXPOSE 3001
+
+# Start the complete automation agent
+CMD ["node", "autonomous-healthcare-agent-complete.js"]

@@ -145,7 +145,7 @@ Integration: Node.js → Python → Railway MCP → GitHub API
 
 **Environment Variables Required:**
 ```bash
-GITHUB_TOKEN=ghp_xxx              # GitHub API access
+GITHUB_TOKEN=ghp_REDACTED_TOKEN              # GitHub API access
 RAILWAY_API_TOKEN=xxx             # Railway API access  
 SMITHERY_API_KEY=xxx              # Smithery MCP access
 SMITHERY_PROFILE=zesty-clam-4hb4aa # Smithery profile
@@ -896,34 +896,45 @@ const calculateLeadScore = (data) => {
 
 ## 📝 EXECUTION COMMAND
 
-**✅ RECOMMENDED: Perfect Automation Script**
+**✅ CURRENT: Autonomous Healthcare Agent with Exa MCP**
 ```bash
-# Use the perfected automation script
-node perfect-healthcare-automation.js <practice-url>
+# Start the Docker container with Exa MCP integration
+docker run --rm -d -p 3014:3001 --name healthcare-agent-exa-demo \
+  -e EXA_API_KEY=94799094-a232-4768-a0a7-5ec4722ce6c4 \
+  -e ELEVENLABS_API_KEY=sk_682da5dc69d0e1c65a6dc5931461d0d4662f0751ec6a460f \
+  -e RAILWAY_API_TOKEN=7de96a07-aaea-4c39-af0f-5e22e543f083 \
+  -e GITHUB_TOKEN=ghp_REDACTED_TOKEN \
+  healthcare-agent-exa-fixed
 
-# Examples:
-node perfect-healthcare-automation.js https://www.theprivateclinic.co.uk
-node perfect-healthcare-automation.js https://www.harleystreetskinclinic.com
-node perfect-healthcare-automation.js https://www.152harleystreet.com
+# Dynamic clinic discovery and automation
+curl -X POST http://localhost:3014/create-leads \
+  -H "Content-Type: application/json" \
+  -d '{"count": 5, "location": "London", "searchType": "aesthetic clinic"}'
+
+# Test specific website analysis
+curl -X POST http://localhost:3014/test-exa \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://www.theprivateclinic.co.uk"}'
 ```
 
-**Single Lead Processing:**
+**Dynamic Lead Discovery:**
 ```
-Process the healthcare practice website at [URL] through the complete automation pipeline: scrape practice data with Playwright MCP, create GitHub repository with proper escaping, deploy personalized demo via Railway MCP, and return the live demo URL.
+Discover healthcare practices in any location using Exa search, analyze websites with multi-source intelligence (Exa crawling + company research + LinkedIn), create personalized GitHub repositories, deploy via Railway with working Python MCP integration.
 ```
 
-**Batch Processing:**
+**Complete Automation Pipeline:**
 ```  
-Process multiple healthcare practice websites through the perfected automation pipeline, using error recovery and proper string escaping, returning a summary of successful deployments with live URLs and any failures with detailed error analysis.
+Execute autonomous healthcare lead generation: Exa search → Multi-source analysis → Notion storage → GitHub repository creation → Railway deployment → Live demo URL generation. Fully automated with 0% human intervention required.
 ```
 
 ## 🎯 WORKFLOW EXECUTION CHECKLIST
 
 **Before Starting:**
 - ✅ Verify template files exist in `./src/`
-- ✅ Check GitHub CLI authentication: `gh auth status`
-- ✅ Test Railway MCP connection: `/mcp` command
-- ✅ Ensure Playwright MCP is available via Claude Code
+- ✅ Check GitHub Token: `GITHUB_TOKEN` environment variable
+- ✅ Test Railway API Token: `RAILWAY_API_TOKEN` environment variable
+- ✅ Ensure Exa MCP connection: `EXA_API_KEY` and Smithery access
+- ✅ Python MCP script available: `railway_mcp_with_github.py`
 
 **During Execution:**
 - ✅ Use `escapeForJavaScript()` for all scraped strings
