@@ -580,6 +580,9 @@ class AutonomousHealthcareAgent {
 
   async extractDoctorNameWithGLM(html, url) {
     try {
+      // PHASE 1: REGEX VERIFICATION - Extract potential doctor names first
+      const doctorNames = this.extractDoctorNamesWithRegex(html);
+      
       // Clean HTML and extract text content
       const textContent = html
         .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
@@ -602,7 +605,18 @@ class AutonomousHealthcareAgent {
           messages: [
             {
               role: 'system',
-              content: 'You are an expert at extracting doctor/physician names from healthcare clinic websites. Extract ONLY the doctor\'s name(s) from the website content. Return just the name(s) in format "Dr. First Last" or "First Last". If multiple doctors, return the primary/main doctor. If no doctor found, return "Unknown Doctor".'
+              content: `You are an expert at extracting doctor/physician names from healthcare clinic websites.
+
+CRITICAL ANTI-HALLUCINATION RULES:
+1. ONLY extract names that are ACTUALLY present in the website content
+2. NEVER generate, guess, or hallucinate doctor names
+3. If multiple doctors found, return the primary/main doctor  
+4. Return format: "Dr. First Last" or "First Last"
+5. If no doctor found in content, return "Unknown Doctor"
+
+VERIFIED DOCTOR NAMES FOUND BY REGEX: ${doctorNames.length > 0 ? doctorNames.join(', ') : 'None'}
+
+If regex found names, verify and select the most appropriate one. If regex found none, search very carefully in the content.`
             },
             {
               role: 'user', 
@@ -610,7 +624,7 @@ class AutonomousHealthcareAgent {
             }
           ],
           max_tokens: 100,
-          temperature: 0.1
+          temperature: 0.0 // Zero temperature for consistent, factual extraction
         })
       });
 
@@ -618,18 +632,29 @@ class AutonomousHealthcareAgent {
         const data = await response.json();
         const extractedName = data.choices[0]?.message?.content?.trim();
         
+        // PHASE 2: VALIDATION - Cross-check GLM result with regex findings
         if (extractedName && extractedName !== 'Unknown Doctor' && !extractedName.includes('no doctor') && !extractedName.includes('not found')) {
-          // Clean and validate the extracted name
+          // Clean the extracted name
           const cleanName = extractedName
             .replace(/^(Dr\.?\s*|Doctor\s*)/i, '')
             .replace(/[^\w\s.-]/g, '')
             .trim();
           
-          if (cleanName.length > 2 && cleanName.length < 50) {
-            console.log(`   ✅ GLM extracted doctor: ${cleanName}`);
+          // PHASE 3: ANTI-HALLUCINATION VERIFICATION
+          if (this.validateDoctorName(cleanName, html, doctorNames)) {
+            console.log(`   ✅ VERIFIED doctor: ${cleanName} (GLM + Regex confirmed)`);
             return cleanName.startsWith('Dr.') ? cleanName : `Dr. ${cleanName}`;
+          } else {
+            console.log(`   ⚠️ GLM result failed verification: ${cleanName}`);
           }
         }
+      }
+      
+      // PHASE 4: FALLBACK - Use regex findings if GLM failed
+      if (doctorNames.length > 0) {
+        const fallbackName = doctorNames[0]; // Use first regex match
+        console.log(`   ✅ FALLBACK doctor: ${fallbackName} (Regex only)`);
+        return fallbackName.startsWith('Dr.') ? fallbackName : `Dr. ${fallbackName}`;
       }
       
       return null;
@@ -637,6 +662,110 @@ class AutonomousHealthcareAgent {
       console.error(`   ⚠️ GLM doctor extraction failed: ${error.message}`);
       return null;
     }
+  }
+
+  /**
+   * 🔍 REGEX EXTRACTION: Find potential doctor names using patterns
+   * This provides a verification baseline for GLM results
+   */
+  extractDoctorNamesWithRegex(html) {
+    const potentialNames = [];
+    
+    // Remove HTML tags and normalize text
+    const text = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+    
+    // Pattern 1: Dr. [First] [Last] variations
+    const drPatterns = [
+      /Dr\.?\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]*)*\s+[A-Z][a-z]+)/g,
+      /Doctor\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]*)*\s+[A-Z][a-z]+)/g
+    ];
+    
+    // Pattern 2: Common medical titles with names
+    const titlePatterns = [
+      /(?:Prof\.?|Professor)\s+([A-Z][a-z]+\s+[A-Z][a-z]+)/g,
+      /([A-Z][a-z]+\s+[A-Z][a-z]+),?\s*(?:MD|M\.D\.|FRCS|FICS|MBBCh|MBBS)/g
+    ];
+    
+    // Pattern 3: "About Dr." or "Meet Dr." sections
+    const contextPatterns = [
+      /(?:About|Meet|Dr\.?)\s+([A-Z][a-z]+\s+[A-Z][a-z]+)/g
+    ];
+    
+    // Apply all patterns
+    [...drPatterns, ...titlePatterns, ...contextPatterns].forEach(pattern => {
+      let match;
+      while ((match = pattern.exec(text)) !== null) {
+        const name = match[1].trim();
+        if (this.isValidPersonName(name)) {
+          potentialNames.push(name);
+        }
+      }
+    });
+    
+    // Remove duplicates and return unique names
+    return [...new Set(potentialNames)];
+  }
+
+  /**
+   * 🛡️ VALIDATION: Check if extracted name is actually present in content
+   */
+  validateDoctorName(extractedName, html, regexNames) {
+    // Rule 1: Name must be reasonable length
+    if (!extractedName || extractedName.length < 3 || extractedName.length > 40) {
+      return false;
+    }
+    
+    // Rule 2: Must contain at least first and last name
+    const nameParts = extractedName.trim().split(/\s+/);
+    if (nameParts.length < 2) {
+      return false;
+    }
+    
+    // Rule 3: Check if name exists in regex findings (strong verification)
+    const nameVariations = [
+      extractedName,
+      extractedName.replace(/^Dr\.?\s*/, ''),
+      `Dr. ${extractedName}`,
+      `Doctor ${extractedName}`
+    ];
+    
+    for (const variation of nameVariations) {
+      if (regexNames.some(regexName => 
+        regexName.toLowerCase().includes(variation.toLowerCase()) ||
+        variation.toLowerCase().includes(regexName.toLowerCase())
+      )) {
+        return true; // Strong match with regex
+      }
+    }
+    
+    // Rule 4: Fallback - check if name appears in original HTML
+    const htmlText = html.toLowerCase();
+    const searchName = extractedName.toLowerCase().replace(/^dr\.?\s*/, '');
+    
+    return htmlText.includes(searchName);
+  }
+
+  /**
+   * 📝 VALIDATION: Check if string looks like a person's name
+   */
+  isValidPersonName(name) {
+    // Basic name validation
+    const nameParts = name.trim().split(/\s+/);
+    
+    // Must have at least 2 parts (first + last name)
+    if (nameParts.length < 2) return false;
+    
+    // Each part should start with capital letter
+    if (!nameParts.every(part => /^[A-Z][a-z]*$/.test(part))) return false;
+    
+    // Reasonable length per part
+    if (nameParts.some(part => part.length < 2 || part.length > 20)) return false;
+    
+    // Exclude common false positives
+    const excludeWords = ['About', 'Contact', 'Services', 'Home', 'Team', 'Staff', 'Clinic', 'Center', 'Medical'];
+    if (nameParts.some(part => excludeWords.includes(part))) return false;
+    
+    return true;
   }
 
   async extractLocationWithGLM(html) {
