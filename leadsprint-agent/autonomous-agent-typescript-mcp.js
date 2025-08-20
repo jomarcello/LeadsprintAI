@@ -691,8 +691,8 @@ class AutonomousHealthcareAgentMCP {
             const repoPath = `/tmp/${repoName}`;
             execSync(`git clone ${repository.clone_url} ${repoPath}`, { stdio: 'ignore' });
 
-            // Copy template
-            const templatePath = '/Users/jovannitilborg/Downloads/Agentsdemo-main';
+            // Copy template - use current working directory in Railway environment
+            const templatePath = process.env.NODE_ENV === 'production' ? '/app' : '/Users/jovannitilborg/Downloads/Agentsdemo-main';
             execSync(`rsync -av --exclude='.git' --exclude='node_modules' ${templatePath}/src/ ${repoPath}/src/`, { stdio: 'ignore' });
             execSync(`cp ${templatePath}/package.json ${templatePath}/next.config.ts ${templatePath}/tailwind.config.js ${templatePath}/postcss.config.mjs ${templatePath}/tsconfig.json ${repoPath}/`, { stdio: 'ignore' });
 
