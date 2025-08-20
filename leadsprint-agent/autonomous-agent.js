@@ -532,9 +532,15 @@ class AutonomousHealthcareAgent {
       console.log(`   🤖 Extracting doctor name using GLM...`);
       const doctorName = await this.extractDoctorNameWithGLM(html, url);
       
+      // CRITICAL: No fallback to mock names - reject if no valid doctor found
+      if (!doctorName) {
+        console.log(`   ❌ REJECTED: No valid doctor name found for ${url} - skipping lead`);
+        throw new Error('No valid doctor name found - website rejected to prevent hallucination');
+      }
+
       const practiceData = {
         company: this.extractCompanyFromDomain(domain),
-        contactName: doctorName || 'Dr. ' + this.generateDoctorName(), // Fallback to mock if extraction fails
+        contactName: doctorName, // Only use verified, real doctor names
         phone: this.extractPhoneFromDomain(domain),
         email: `info@${domain}`,
         location: await this.extractLocationWithGLM(html) || 'Unknown Location',
@@ -561,7 +567,7 @@ class AutonomousHealthcareAgent {
       
       return {
         company: this.extractCompanyFromDomain(domain),
-        contactName: 'Dr. ' + this.generateDoctorName(),
+        contactName: 'Unknown Doctor', // No mock generation - this should only be used if scraping completely fails
         phone: this.extractPhoneFromDomain(domain),
         email: `info@${domain}`,
         location: 'Unknown Location',
@@ -650,13 +656,20 @@ If regex found names, verify and select the most appropriate one. If regex found
         }
       }
       
-      // PHASE 4: FALLBACK - Use regex findings if GLM failed
+      // PHASE 4: FALLBACK - Use regex findings if GLM failed, but validate them first
       if (doctorNames.length > 0) {
-        const fallbackName = doctorNames[0]; // Use first regex match
-        console.log(`   ✅ FALLBACK doctor: ${fallbackName} (Regex only)`);
-        return fallbackName.startsWith('Dr.') ? fallbackName : `Dr. ${fallbackName}`;
+        // Find the most valid regex result
+        for (const candidateName of doctorNames) {
+          if (this.isValidPersonName(candidateName)) {
+            console.log(`   ✅ FALLBACK doctor: ${candidateName} (Regex verified)`);
+            return candidateName.startsWith('Dr.') ? candidateName : `Dr. ${candidateName}`;
+          }
+        }
+        console.log(`   ⚠️ All regex matches failed validation: ${doctorNames.join(', ')}`);
       }
       
+      // PHASE 5: ULTIMATE FALLBACK - Return null rather than bad data
+      console.log(`   ❌ No valid doctor name found for ${url}`);
       return null;
     } catch (error) {
       console.error(`   ⚠️ GLM doctor extraction failed: ${error.message}`);
@@ -755,15 +768,43 @@ If regex found names, verify and select the most appropriate one. If regex found
     // Must have at least 2 parts (first + last name)
     if (nameParts.length < 2) return false;
     
-    // Each part should start with capital letter
-    if (!nameParts.every(part => /^[A-Z][a-z]*$/.test(part))) return false;
+    // Must have exactly 2-3 parts (no more than 3 names)
+    if (nameParts.length > 3) return false;
     
-    // Reasonable length per part
-    if (nameParts.some(part => part.length < 2 || part.length > 20)) return false;
+    // Each part should start with capital letter and be alphabetic only
+    if (!nameParts.every(part => /^[A-Z][a-z]{1,15}$/.test(part))) return false;
     
-    // Exclude common false positives
-    const excludeWords = ['About', 'Contact', 'Services', 'Home', 'Team', 'Staff', 'Clinic', 'Center', 'Medical'];
+    // Reasonable length per part (2-15 characters)
+    if (nameParts.some(part => part.length < 2 || part.length > 15)) return false;
+    
+    // Exclude common false positives - EXPANDED LIST
+    const excludeWords = [
+      'About', 'Contact', 'Services', 'Home', 'Team', 'Staff', 'Clinic', 'Center', 'Medical',
+      'Our', 'Locations', 'Hours', 'Schedule', 'Appointment', 'Book', 'Call', 'Email',
+      'Address', 'Phone', 'Office', 'Practice', 'Surgery', 'Treatment', 'Consultation',
+      'Gallery', 'Reviews', 'Testimonials', 'Blog', 'News', 'Events', 'Special', 'Offers',
+      'Beauty', 'Aesthetic', 'Cosmetic', 'Dermatology', 'Plastic', 'Wellness', 'Health',
+      'Patient', 'Information', 'Forms', 'Insurance', 'Payment', 'Financing', 'Privacy',
+      'Terms', 'Conditions', 'Policy', 'Notice', 'Rights', 'Copyright', 'Reserved'
+    ];
     if (nameParts.some(part => excludeWords.includes(part))) return false;
+    
+    // Exclude common website navigation words
+    const navigationWords = ['Menu', 'Main', 'Navigation', 'Search', 'Login', 'Register', 'Account'];
+    if (nameParts.some(part => navigationWords.includes(part))) return false;
+    
+    // Must contain valid name patterns - reject obvious non-names
+    const invalidPatterns = [
+      /^(The|Our|Your|My|His|Her)\s/i,  // Articles
+      /\s(Inc|Ltd|LLC|Corp|Company)$/i,  // Business suffixes
+      /^(Copyright|All|Terms|Privacy)/i,  // Legal text
+      /\d/,  // Contains numbers
+      /[^a-zA-Z\s]/  // Contains special characters
+    ];
+    
+    for (const pattern of invalidPatterns) {
+      if (pattern.test(name)) return false;
+    }
     
     return true;
   }
@@ -1334,15 +1375,6 @@ If regex found names, verify and select the most appropriate one. If regex found
     return `${name} Clinic`;
   }
 
-  generateDoctorName() {
-    const firstNames = ['Sarah', 'Michael', 'Emma', 'James', 'Sophie', 'David', 'Rachel', 'Thomas'];
-    const lastNames = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis'];
-    
-    const firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
-    const lastName = lastNames[Math.floor(Math.random() * lastNames.length)];
-    
-    return `${firstName} ${lastName}`;
-  }
 
   generatePracticeSpecificPrompt(practiceData) {
     return `You are the professional appointment scheduling assistant at ${practiceData.company} with ${practiceData.contactName}. Help patients schedule ${practiceData.practiceType} treatments at ${practiceData.location}.`;
