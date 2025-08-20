@@ -20,5 +20,5 @@ EXPOSE 3000
 # Set default environment variables
 ENV NODE_ENV=production
 
-# Start the agent
+# Start the correct autonomous agent (main file)
 CMD ["node", "autonomous-agent.js"]
