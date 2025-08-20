@@ -189,17 +189,8 @@ class AutonomousHealthcareAgent {
       masterAgentId: process.env.ELEVENLABS_AGENT_ID || this.throwMissingEnvError('ELEVENLABS_AGENT_ID')
     };
     
-    // Target healthcare websites for autonomous scraping
-    this.healthcareTargets = [
-      'https://www.theprivateclinic.co.uk',
-      'https://www.harleystreetskinclinic.com',
-      'https://www.152harleystreet.com',
-      'https://www.eaclinic.co.uk',
-      'https://harleyclinic.com',
-      'https://www.111harleystreet.com',
-      'https://www.theplasticsurgerygroup.co.uk',
-      'https://www.harleymedical.co.uk'
-    ];
+    // EXA API key for real healthcare practice discovery
+    this.exaApiKey = process.env.EXA_API_KEY || this.throwMissingEnvError('EXA_API_KEY');
   }
 
   setupMiddleware() {
@@ -240,7 +231,7 @@ class AutonomousHealthcareAgent {
           'Repository Creation (GitHub API)',
           'Deployment (Railway MCP)'
         ],
-        targets: this.healthcareTargets.length,
+        searchEngine: 'EXA API',
         ready: true
       });
     });
@@ -339,10 +330,20 @@ class AutonomousHealthcareAgent {
     console.log('');
 
     const results = [];
-    const selectedUrls = this.healthcareTargets.slice(0, leadCount);
+    
+    // Step 1: Use EXA to find healthcare practices
+    console.log(chalk.cyan(`🔍 STEP 1: Using EXA Search to find ${leadCount} healthcare practices`));
+    const healthcarePractices = await this.findHealthcarePracticesWithEXA(leadCount);
+    
+    if (!healthcarePractices || healthcarePractices.length === 0) {
+      throw new Error('No healthcare practices found with EXA search');
+    }
+    
+    console.log(chalk.green(`✅ Found ${healthcarePractices.length} healthcare practices via EXA`));
 
-    for (let i = 0; i < selectedUrls.length; i++) {
-      const url = selectedUrls[i];
+    for (let i = 0; i < healthcarePractices.length; i++) {
+      const practice = healthcarePractices[i];
+      const url = practice.url;
       console.log(chalk.yellow(`\n🏥 Processing Healthcare Lead ${i + 1}/${leadCount}`));
       console.log(chalk.gray(`URL: ${url}`));
       
@@ -358,7 +359,7 @@ class AutonomousHealthcareAgent {
         }
         
         // Rate limiting between requests
-        if (i < selectedUrls.length - 1) {
+        if (i < healthcarePractices.length - 1) {
           console.log(chalk.gray('⏳ Waiting 3 seconds before next lead...'));
           await this.sleep(3000);
         }
@@ -459,6 +460,50 @@ class AutonomousHealthcareAgent {
         duration: Math.round((Date.now() - startTime) / 1000),
         timestamp: new Date().toISOString()
       };
+    }
+  }
+
+  async findHealthcarePracticesWithEXA(count) {
+    console.log(`   🔍 EXA Search: Finding ${count} healthcare practices globally`);
+    
+    try {
+      // EXA Search for healthcare practices
+      const response = await fetch('https://api.exa.ai/search', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.exaApiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          query: 'aesthetic clinic cosmetic surgery medical spa beauty clinic',
+          numResults: count,
+          type: 'auto',
+          useAutoprompt: true,
+          category: 'company',
+          includeDomains: []  // Let EXA find practices globally
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`EXA API error: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      
+      if (!data.results || data.results.length === 0) {
+        throw new Error('No healthcare practices found by EXA');
+      }
+
+      return data.results.map(result => ({
+        url: result.url,
+        title: result.title,
+        snippet: result.text || '',
+        id: result.id
+      }));
+      
+    } catch (error) {
+      console.error(`   ❌ EXA Search failed: ${error.message}`);
+      throw error;
     }
   }
 
@@ -1426,7 +1471,7 @@ NODE_ENV=production`;
       console.log(`   POST /process-urls { "urls": ["https://..."] }`);
       console.log('');
       console.log(chalk.yellow('⚡ AUTONOMOUS MODE: Ready for healthcare lead automation'));
-      console.log(chalk.gray(`Target websites: ${this.healthcareTargets.length} healthcare practices`));
+      console.log(chalk.gray(`Search method: EXA API for global healthcare practices`));
     });
   }
 }
