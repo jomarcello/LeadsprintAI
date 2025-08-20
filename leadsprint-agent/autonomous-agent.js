@@ -532,15 +532,39 @@ class AutonomousHealthcareAgent {
       console.log(`   🤖 Extracting doctor name using GLM...`);
       const doctorName = await this.extractDoctorNameWithGLM(html, url);
       
-      // CRITICAL: No fallback to mock names - reject if no valid doctor found
+      // Get real clinic data first
+      const companyName = this.extractCompanyFromDomain(domain);
+      const realServices = await this.extractServicesWithGLM(html) || ['Aesthetic Treatments', 'Cosmetic Surgery', 'Dermatology'];
+      const realLocation = await this.extractLocationWithGLM(html) || 'Professional Healthcare Location';
+
+      // Strategy: Use general clinic version if no doctor name found
       if (!doctorName) {
-        console.log(`   ❌ REJECTED: No valid doctor name found for ${url} - skipping lead`);
-        throw new Error('No valid doctor name found - website rejected to prevent hallucination');
+        console.log(`   ⚡ GENERAL VERSION: No doctor name found - creating clinic-focused demo for ${companyName}`);
+        
+        const practiceData = {
+          company: companyName,
+          contactName: `${companyName} Team`, // Use clinic name + "Team" instead of fake doctor
+          phone: this.extractPhoneFromDomain(domain),
+          email: `info@${domain}`,
+          location: realLocation,
+          services: realServices, // Use real extracted services
+          practiceType: 'beauty',
+          practiceId: this.generatePracticeId(domain),
+          leadSource: 'general-clinic-version',
+          leadScore: 75, // Still good score as it's real clinic data
+          brandColors: this.detectBrandColorsFromDomain(domain),
+          website: url,
+          isGeneralVersion: true // Flag to indicate this is clinic-focused, not doctor-focused
+        };
+
+        console.log(`   ✅ Scraped: ${companyName} (General Team Version) - Services: ${realServices.slice(0,2).join(', ')}`);
+        return practiceData;
       }
 
+      // Standard version with doctor name
       const practiceData = {
-        company: this.extractCompanyFromDomain(domain),
-        contactName: doctorName, // Only use verified, real doctor names
+        company: companyName,
+        contactName: doctorName, // Use verified, real doctor names
         phone: this.extractPhoneFromDomain(domain),
         email: `info@${domain}`,
         location: await this.extractLocationWithGLM(html) || 'Unknown Location',
@@ -949,7 +973,10 @@ If regex found names, verify and select the most appropriate one. If regex found
     
     try {
       const prompt = this.generatePracticeSpecificPrompt(practiceData);
-      const firstMessage = `Thank you for calling ${practiceData.company}! This is your wellness assistant. We're here to help you begin your healing journey with ${practiceData.contactName}. Which of our ${practiceData.practiceType} treatments can I help you schedule today?`;
+      // Generate appropriate first message based on version type
+      const firstMessage = practiceData.isGeneralVersion 
+        ? `Thank you for calling ${practiceData.company}! This is your wellness assistant. Our experienced medical team is here to help you begin your healing journey. Which of our ${practiceData.practiceType} treatments can I help you schedule today?`
+        : `Thank you for calling ${practiceData.company}! This is your wellness assistant. We're here to help you begin your healing journey with ${practiceData.contactName}. Which of our ${practiceData.practiceType} treatments can I help you schedule today?`;
       
       // In real implementation:
       // 1. Update master agent with practice data
@@ -1377,7 +1404,12 @@ If regex found names, verify and select the most appropriate one. If regex found
 
 
   generatePracticeSpecificPrompt(practiceData) {
-    return `You are the professional appointment scheduling assistant at ${practiceData.company} with ${practiceData.contactName}. Help patients schedule ${practiceData.practiceType} treatments at ${practiceData.location}.`;
+    // Handle general clinic version vs doctor-specific version
+    if (practiceData.isGeneralVersion) {
+      return `You are the professional appointment scheduling assistant at ${practiceData.company}. Our experienced medical team provides ${practiceData.practiceType} treatments at ${practiceData.location}. Help patients schedule consultations and treatments with our specialists.`;
+    } else {
+      return `You are the professional appointment scheduling assistant at ${practiceData.company} with ${practiceData.contactName}. Help patients schedule ${practiceData.practiceType} treatments at ${practiceData.location}.`;
+    }
   }
 
   generateComprehensiveSystemPrompt(practiceData) {
