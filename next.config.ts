@@ -16,9 +16,9 @@ const nextConfig: NextConfig = {
     return `build-${Date.now()}-css-fix`
   },
   // Force static optimization to include all Tailwind classes
-  experimental: {
-    optimizeCss: true,
-  },
+  // experimental: {
+  //   optimizeCss: true,
+  // },
   // Ensure all CSS is generated for production
   productionBrowserSourceMaps: false,
   poweredByHeader: false,

@@ -57,11 +57,11 @@ export default function ConversationalVoiceDemo() {
           // Play next chunk if available
           setTimeout(() => playNextAudioChunk(), 10);
           
-          // If no more audio chunks, Robin finished speaking
+          // If no more audio chunks, agent finished speaking
           if (audioQueueRef.current.length === 0) {
             setIsListening(true);
             isListeningRef.current = true;
-            console.log('🎤 Robin finished speaking - resuming listening');
+            console.log('🎤 Agent finished speaking - resuming listening');
           }
         };
         
@@ -84,51 +84,50 @@ export default function ConversationalVoiceDemo() {
     setError(null);
 
     try {
-      // Connection to play.ht Thai voice agent
+      // Connection to play.ht voice agent
       const playhtApiKey = '9a1ffef880fd4dab94c34d49267812b3';
-      const thaiAgentId = 'thai-lady-J0JZKhhZhpgpwebqoE3zQ';
-      const wsUrl = `wss://api.play.ht/v2/live?api_key=${playhtApiKey}&agent_id=${thaiAgentId}`;
+      const agentId = 'healthcare-assistant-J0JZKhhZhpgpwebqoE3zQ';
+      const wsUrl = `wss://api.play.ht/v2/live?api_key=${playhtApiKey}&agent_id=${agentId}`;
       wsRef.current = new WebSocket(wsUrl);
       
       wsRef.current.onopen = () => {
-        console.log('Connected to Play.ht Thai Voice Agent');
+        console.log('Connected to Play.ht Healthcare Voice Agent');
         setConnectionStatus('connected');
         setIsConnected(true);
         
-        // Send Thai beauty clinic configuration to play.ht
+        // Send healthcare clinic configuration to play.ht
         const setupMessage = {
           type: 'setup',
           config: {
             voice: {
-              agent_id: thaiAgentId,
-              language: 'th',
+              agent_id: agentId,
+              language: 'en',
               voice_style: 'professional'
             },
-            system_prompt: `คุณคือ Robin ผู้ช่วยนัดหมายของ ${practiceConfig.name} คลินิกความงาม 
+            system_prompt: `You are a helpful healthcare assistant for ${practiceConfig.name}.
 
-ตอบเป็นภาษาไทยเท่านั้น โดยใช้คำพูดที่สุภาพและเป็นมิตร
+Please respond professionally and warmly.
 
-หน้าที่ของคุณ:
-1. ต้อนรับผู้ป่วยด้วยความอบอุ่น
-2. ช่วยจองนัดหมายสำหรับบริการต่างๆ ของคลินิก
-3. แนะนำบริการความงามของคลินิก
-4. ตอบคำถามเกี่ยวกับการดูแลก่อนและหลังการรักษา
+Your responsibilities:
+1. Welcome patients warmly
+2. Help schedule appointments for various clinic services
+3. Recommend appropriate healthcare services
+4. Answer questions about pre and post-care instructions
 
-บริการของคลินิก:
-- ฉีดโบท็อกซ์: 3,000-8,000 บาท
-- ฟิลเลอร์: 8,000-15,000 บาท  
-- การรักษาสิว: 2,000-5,000 บาท
-- เลเซอร์กำจัดขน: 1,500-5,000 บาท
-- ฟอโตเฟเชียล: 2,500-4,000 บาท
+Our services include:
+- General consultations
+- Preventive care and screenings
+- Specialized treatments
+- Health maintenance programs
 
-เวลาทำการ: จันทร์-เสาร์ 9:00-18:00
+Operating hours: Monday-Saturday 9:00 AM - 6:00 PM
 
-ให้คำตอบสั้นๆ กระชับ และช่วยเหลือผู้ป่วยอย่างเต็มที่`
+Provide concise, helpful responses and assist patients to the best of your ability.`
           }
         };
         
         wsRef.current?.send(JSON.stringify(setupMessage));
-        console.log('🏥 Thai BeautyMed configuration sent to Play.ht');
+        console.log('🏥 Healthcare configuration sent to Play.ht');
         
         // Start continuous streaming
         startAudioStreaming();
@@ -141,7 +140,7 @@ export default function ConversationalVoiceDemo() {
         // Handle Play.ht response format
         if (data.type === 'audio') {
           try {
-            console.log('🔊 Received audio from Thai Robin');
+            console.log('🔊 Received audio from Healthcare Assistant');
             const audioData = data.audio_data;
             const rawBuffer = new ArrayBuffer(audioData.length);
             const audioArray = new Uint8Array(rawBuffer);
@@ -149,7 +148,7 @@ export default function ConversationalVoiceDemo() {
               audioArray[i] = audioData.charCodeAt(i);
             }
             
-            // Robin is speaking - stop listening
+            // Assistant is speaking - stop listening
             setIsListening(false);
             isListeningRef.current = false;
             
@@ -163,7 +162,7 @@ export default function ConversationalVoiceDemo() {
         
         // Handle text response
         if (data.type === 'text' && data.text) {
-          console.log('🗣️ Thai Robin says:', data.text);
+          console.log('🗣️ Healthcare Assistant says:', data.text);
           setAgentResponse(data.text);
         }
         
@@ -189,14 +188,14 @@ export default function ConversationalVoiceDemo() {
 
       wsRef.current.onerror = (error) => {
         console.error('WebSocket error:', error);
-        setError('ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ Play.ht ได้');
+        setError('Unable to connect to Play.ht server');
         setConnectionStatus('disconnected');
         setIsConnected(false);
       };
 
     } catch (error) {
       console.error('Failed to create WebSocket:', error);
-      setError('ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้');
+      setError('Unable to connect to server');
       setConnectionStatus('disconnected');
     }
   }, []);
@@ -266,7 +265,7 @@ export default function ConversationalVoiceDemo() {
       
     } catch (error) {
       console.error('Failed to start audio streaming:', error);
-      setError('ไม่สามารถเริ่มการสตรีมเสียงได้');
+      setError('Unable to start audio streaming');
     }
   }, [isStreaming]);
 
@@ -313,7 +312,7 @@ export default function ConversationalVoiceDemo() {
       setIsLoading(false);
     } catch (error) {
       console.error('Conversation error:', error);
-      setError('ไม่สามารถเริ่มการสนทนาได้');
+      setError('Unable to start conversation');
       setIsLoading(false);
     }
   }, [isConnected, connectWebSocket]);
@@ -366,7 +365,7 @@ export default function ConversationalVoiceDemo() {
         </div>
         
         <p className="text-lg text-gray-600">
-          Real-time conversational AI with Play.ht Thai Voice Agent
+          Real-time conversational AI with Healthcare Voice Agent
         </p>
         
         <div className="flex items-center justify-center gap-2">
@@ -376,9 +375,9 @@ export default function ConversationalVoiceDemo() {
             'bg-red-500'
           }`}></div>
           <span className="text-sm text-gray-600">
-            {connectionStatus === 'connected' ? 'เชื่อมต่อแล้ว' : 
-             connectionStatus === 'connecting' ? 'กำลังเชื่อมต่อ...' : 
-             'ยังไม่ได้เชื่อมต่อ'}
+            {connectionStatus === 'connected' ? 'Connected' : 
+             connectionStatus === 'connecting' ? 'Connecting...' : 
+             'Not Connected'}
           </span>
         </div>
       </div>
@@ -401,17 +400,17 @@ export default function ConversationalVoiceDemo() {
           {isLoading ? (
             <>
               <div className="animate-spin rounded-full h-6 w-6 border-2 border-white border-t-transparent" />
-              กำลังเชื่อมต่อ...
+              Connecting...
             </>
           ) : isConnected ? (
             <>
               <PhoneOff className="h-6 w-6" />
-              วางสาย
+              End Call
             </>
           ) : (
             <>
               <Phone className="h-6 w-6" />
-              เริ่มการสนทนาแบบ Real-time
+              Start Real-time Conversation
             </>
           )}
         </button>
@@ -425,7 +424,7 @@ export default function ConversationalVoiceDemo() {
               isStreaming ? 'bg-green-500 animate-pulse' : 'bg-gray-400'
             }`}></div>
             <span className="text-sm text-gray-600">
-              {isStreaming ? 'กำลังฟังและพูดแบบ Real-time' : 'ไม่ได้สตรีม'}
+              {isStreaming ? 'Real-time listening and speaking' : 'Not streaming'}
             </span>
           </div>
           
@@ -435,7 +434,7 @@ export default function ConversationalVoiceDemo() {
               isPlayingAudio ? 'bg-purple-500 animate-pulse' : 'bg-gray-400'
             }`}></div>
             <span className="text-sm text-gray-600">
-              {isPlayingAudio ? '🔊 Robin กำลังพูด' : '🔇 เงียบ'}
+              {isPlayingAudio ? '🔊 Assistant Speaking' : '🔇 Silent'}
             </span>
           </div>
           
@@ -445,7 +444,7 @@ export default function ConversationalVoiceDemo() {
               isListening ? 'bg-blue-500 animate-pulse' : 'bg-gray-400'
             }`}></div>
             <span className="text-sm text-gray-600">
-              {isListening ? '👂 กำลังฟัง' : '⏸️ หยุดฟัง'}
+              {isListening ? '👂 Listening' : '⏸️ Paused'}
             </span>
           </div>
         </div>
@@ -464,11 +463,11 @@ export default function ConversationalVoiceDemo() {
         <div className="space-y-3">
           <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
             <div className={`w-3 h-3 ${isStreaming ? 'bg-green-500 animate-pulse' : 'bg-purple-500'} rounded-full`}></div>
-            Robin (Play.ht Thai Voice Agent):
+            Healthcare Assistant:
           </h3>
           <div className="p-4 bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-lg min-h-[100px]">
             <p className="text-gray-700">
-              {agentResponse || 'พูดคุยกับ Robin ได้เลย... เสียงจะออกจากลำโพงโดยตรง'}
+              {agentResponse || 'Start talking with the Healthcare Assistant... Audio will play through your speakers'}
             </p>
           </div>
         </div>
@@ -477,11 +476,11 @@ export default function ConversationalVoiceDemo() {
       {/* Text Input for Testing */}
       {isConnected && (
         <div className="space-y-2">
-          <h4 className="font-semibold text-gray-800">หรือพิมพ์ข้อความทดสอบ:</h4>
+          <h4 className="font-semibold text-gray-800">Or type a test message:</h4>
           <div className="flex gap-2">
             <input
               type="text"
-              placeholder="พิมพ์ข้อความ..."
+              placeholder="Type your message..."
               className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
               onKeyPress={(e) => {
                 if (e.key === 'Enter') {
@@ -500,7 +499,7 @@ export default function ConversationalVoiceDemo() {
               }}
               className="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-500"
             >
-              ส่ง
+              Send
             </button>
           </div>
         </div>
@@ -508,16 +507,16 @@ export default function ConversationalVoiceDemo() {
 
       {/* Instructions */}
       <div className="bg-gradient-to-r from-purple-50 to-indigo-50 p-6 rounded-lg border border-purple-200">
-        <h4 className="font-semibold text-purple-800 mb-3">วิธีใช้งาน Conversational Voice Agent:</h4>
+        <h4 className="font-semibold text-purple-800 mb-3">How to use the Healthcare Voice Assistant:</h4>
         <ul className="space-y-2 text-sm text-purple-700">
-          <li>1. เปิด Python server: <code className="bg-purple-100 px-2 py-1 rounded">python python-backend/conversational_agent.py</code></li>
-          <li>2. กดปุ่ม "เริ่มการสนทนาแบบ Real-time" เพื่อเชื่อมต่อ</li>
-          <li>3. <strong>พูดได้เลย!</strong> ไม่ต้องกดปุ่มอะไร - ระบบจะฟังและตอบแบบ Real-time</li>
-          <li>4. เสียงจะออกจากลำโพงโดยตรง - คุยได้เหมือนกับคนจริง</li>
+          <li>1. Click "Start Real-time Conversation" to connect</li>
+          <li>2. <strong>Start speaking!</strong> No need to press any buttons - the system listens and responds in real-time</li>
+          <li>3. Audio will play through your speakers directly - conversation flows naturally</li>
+          <li>4. Ask about appointments, services, or general healthcare questions</li>
         </ul>
         <div className="mt-4 p-3 bg-purple-100 rounded-lg">
           <p className="text-xs text-purple-600">
-            <strong>หมายเหตุ:</strong> ใช้หูฟังเพื่อป้องกัน echo และให้ประสบการณ์การสนทนาที่ดีที่สุด
+            <strong>Note:</strong> Use headphones to prevent echo and get the best conversation experience
           </p>
         </div>
       </div>
