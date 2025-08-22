@@ -38,9 +38,9 @@ healthcare-demo-template/
 │   ├── components/
 │   │   ├── ChatDemo.tsx         # ⚡ PERSONALIZE: AI chat interface
 │   │   ├── GeminiLiveVoiceDemo.tsx # ⚡ PERSONALIZE: Voice assistant
-│   │   ├── ThaiVoiceAgent.tsx   # Multi-language voice support
+│   │   ├── VoiceAgent.tsx       # Multi-language voice support
 │   │   ├── VoiceDemo.tsx        # Voice interaction component
-│   │   └── ThaiPage.tsx         # International practice support
+│   │   └── InternationalSupport.tsx # International practice support
 │   ├── lib/
 │   │   ├── practice-config.ts   # 🎯 MAIN PERSONALIZATION FILE (29k+ tokens!)
 │   │   └── practice-config.backup.ts # Backup configurations
