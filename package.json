@@ -51,7 +51,7 @@
   "dependencies": {
     "@google-cloud/speech": "^7.2.0",
     "@google-cloud/text-to-speech": "^6.2.0",
-    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@modelcontextprotocol/sdk": "^1.17.4",
     "@slack/bolt": "^4.0.0",
     "@vapi-ai/web": "^2.2.0",
     "axios": "^1.9.0",
