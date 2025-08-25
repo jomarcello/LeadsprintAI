@@ -14,7 +14,7 @@ PROJECTS=(
     "spinealign-demo"
     "smith-demo"
     "smart-cosmetic-demo"
-    "beautymed-demo"
+    # "beautymed-demo" # Removed Thai-related demo
     "111-harley-street-demo"
     "152-harley-street-demo"
     "amsterdam-wellness-demo"

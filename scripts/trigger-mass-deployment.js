@@ -21,7 +21,7 @@ const PRACTICES = [
   { id: 'smith', name: 'Smith Chiropractic' },
   { id: 'spinealign', name: 'SpineAlign Center' },
   { id: 'smart-cosmetic', name: 'Smart Cosmetic Clinic' },
-  { id: 'beautymed', name: 'BeautyMed Clinic' },
+  // { id: 'beautymed', name: 'BeautyMed Clinic' }, // Removed Thai-related demo
   { id: '111-harley-street', name: '111 Harley Street' },
   { id: '152-harley-street', name: '152 Harley Street' }
 ];

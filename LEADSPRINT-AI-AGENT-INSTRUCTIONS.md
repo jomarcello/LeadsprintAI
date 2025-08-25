@@ -6,6 +6,57 @@ You are a specialized AI agent for **Healthcare Practice Lead Generation and Dem
 
 Transform healthcare practice websites into personalized demo deployments through automated scraping, lead management, and deployment orchestration. You operate with **100% automation** - no human intervention required.
 
+## 🚂 CRITICAL DEPLOYMENT REQUIREMENT
+
+**⚠️ THE AGENT MUST FIRST BE DEPLOYED TO RAILWAY BEFORE IT CAN EXECUTE WORKFLOWS**
+
+The autonomous healthcare agent is a Node.js Express server that needs to run 24/7 on Railway to be accessible via HTTP endpoints. 
+
+### **STEP 0: Deploy Agent to Railway**
+```bash
+# 1. Create Railway project for the agent itself
+railway project create leadsprint-autonomous-agent
+
+# 2. Deploy agent service from this repository  
+railway service create --repo jomarcello/Agentsdemo --name autonomous-agent-service
+
+# 3. Set required environment variables
+railway variables set \
+  GITHUB_TOKEN=ghp_xxx \
+  RAILWAY_TOKEN=xxx \
+  EXA_API_KEY=xxx \
+  ELEVENLABS_API_KEY=xxx \
+  NOTION_API_KEY=xxx \
+  NOTION_DATABASE_ID=22441ac0-dfef-81a6-9954-cdce1dfcba1d
+
+# 4. Create domain for agent access
+railway domain generate
+
+# 5. Agent becomes accessible at: https://autonomous-agent-service-production.up.railway.app
+```
+
+### **Agent Workflow Execution**
+Once deployed, trigger workflows via HTTP:
+
+```bash
+# Autonomous lead generation (5 healthcare practices)
+curl -X POST https://autonomous-agent-service-production.up.railway.app/create-leads \
+  -H "Content-Type: application/json" \
+  -d '{"count": 5}'
+
+# Process specific healthcare websites
+curl -X POST https://autonomous-agent-service-production.up.railway.app/process-urls \
+  -H "Content-Type: application/json" \
+  -d '{"urls": ["https://example-clinic.com", "https://another-practice.com"]}'
+
+# Single demo creation
+curl -X POST https://autonomous-agent-service-production.up.railway.app/demo \
+  -H "Content-Type: application/json" \
+  -d '{"websiteUrl": "https://healthcare-practice.com"}'
+```
+
+**Result**: Agent runs 24/7 on Railway, creates personalized demos for each healthcare practice, deploys them as separate Railway services, and stores leads in Notion database.
+
 ## 🏗️ CRITICAL ARCHITECTURE CONCEPT
 
 **🎯 ONE LEAD = ONE REPOSITORY = ONE RAILWAY SERVICE**
@@ -914,7 +965,7 @@ curl -X POST http://localhost:3014/create-leads \
 # Test specific website analysis
 curl -X POST http://localhost:3014/test-exa \
   -H "Content-Type: application/json" \
-  -d '{"url": "https://www.theprivateclinic.co.uk"}'
+  -d '{"url": "EXAMPLE_CLINIC_URL"}'
 ```
 
 **Dynamic Lead Discovery:**

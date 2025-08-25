@@ -205,7 +205,7 @@ The agent can be configured via `config/settings.json`:
   },
   "healthcare": {
     "discoveryTargets": [
-      "https://www.theprivateclinic.co.uk",
+      "https://www.harleystreetskinclinic.com",
       "https://www.111harleystreet.com"
     ],
     "practiceTypes": ["beauty", "dental", "chiropractic"],
@@ -428,7 +428,7 @@ Strict domain validation for healthcare practices:
 ```javascript
 // Allowed healthcare domains
 const allowedDomains = [
-  'theprivateclinic.co.uk',
+  'harleystreetskinclinic.com',
   '111harleystreet.com',
   'harleystreetskinclinic.com',
   '*.clinic',

@@ -30,14 +30,8 @@ class AutonomousHealthcareAgentMCP {
         this.smitheryApiKey = process.env.SMITHERY_API_KEY || this.throwMissingEnvError('SMITHERY_API_KEY');
         this.smitheryProfile = process.env.SMITHERY_PROFILE || this.throwMissingEnvError('SMITHERY_PROFILE');
         
-        // Healthcare targets
-        this.healthcareTargets = [
-            "https://www.theprivateclinic.co.uk",
-            "https://www.harleystreetskinclinic.com",
-            "https://www.152harleystreet.com",
-            "https://www.eaclinic.co.uk",
-            "https://harleyclinic.com"
-        ];
+        // Healthcare targets - NO HARDCODED CLINICS
+        // Agent discovers clinics dynamically via EXA MCP
 
         // Tokens from environment variables - SECURITY: No hardcoded fallbacks
         this.config = {
