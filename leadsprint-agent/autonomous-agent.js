@@ -271,9 +271,14 @@ class AutonomousHealthcareAgent {
       const agentId = await this.createElevenLabsAgent(scrapedData);
       console.log(`   ✅ Created voice agent: ${agentId}`);
       
-      // PHASE 3: Direct Railway MCP Deployment
-      console.log(chalk.cyan(`🚂 PHASE 3: Railway MCP Deployment`));
-      const deployment = await this.deployDirectlyToRailway(scrapedData, agentId);
+      // PHASE 3: GitHub Repository Creation & Personalization
+      console.log(chalk.cyan(`📦 PHASE 3: GitHub Repository & Personalization`));
+      const repository = await this.createPersonalizedRepository(scrapedData, agentId);
+      console.log(`   ✅ Created repository: ${repository.name}`);
+      
+      // PHASE 4: Railway Deployment (connect to personalized repository)
+      console.log(chalk.cyan(`🚂 PHASE 4: Railway Deployment`));
+      const deployment = await this.deployToRailwayFromRepo(scrapedData, repository);
       console.log(`   ✅ Deployed to Railway: ${deployment.url}`);
       
       // PHASE 5: Final Notion Update
@@ -292,7 +297,8 @@ class AutonomousHealthcareAgent {
         demoUrl: deployment.url,
         agentId,
         notionId: notionPage.id,
-        deploymentMethod: 'railway-mcp-direct',
+        repositoryUrl: repository.html_url,
+        deploymentMethod: 'railway-mcp-with-dedicated-repo',
         duration: Math.round(duration / 1000),
         timestamp: new Date().toISOString()
       };
@@ -755,12 +761,14 @@ class AutonomousHealthcareAgent {
     }
   }
   
-  async deployDirectlyToRailway(practiceData, agentId) {
+  async deployToRailwayFromRepo(practiceData, repository) {
     try {
-      console.log(`   🚂 Creating Railway project via MCP (no GitHub repo needed)...`);
+      console.log(`   🚂 Creating Railway project for dedicated repository...`);
+      console.log(`   📦 Repository: ${repository.full_name}`);
+      console.log(`   🎯 This contains personalized healthcare app for ${practiceData.company}`);
       
       // Use clean practice name for project
-      const projectName = `${practiceData.practiceId}-mcp-demo`;
+      const projectName = `${practiceData.practiceId}-demo`;
       
       // Create project using MCP
       const project = await this.railwayMCPCreateProject(projectName);
@@ -771,10 +779,9 @@ class AutonomousHealthcareAgent {
       const prodEnv = environments.find(env => env.name === 'production') || environments[0];
       console.log(`   ✅ Found environment: ${prodEnv.name} (${prodEnv.id})`);
       
-      // Deploy from our main Agentsdemo repo directly (no new repo creation)
-      const mainRepoName = "jomarcello/Agentsdemo";  // Use existing main template repo
-      const service = await this.railwayMCPCreateService(project.id, mainRepoName);
-      console.log(`   ✅ Railway service created from main template: ${service.name}`);
+      // Deploy from personalized repository (critical: each practice gets own repo)
+      const service = await this.railwayMCPCreateService(project.id, repository.full_name);
+      console.log(`   ✅ Railway service created from personalized repo: ${service.name}`);
       
       // Set environment variables using MCP only (no GraphQL fallback)
       const variables = {
@@ -795,14 +802,15 @@ class AutonomousHealthcareAgent {
       return {
         url: `https://${domain.domain}`,
         status: 'deployed', 
-        deploymentMethod: 'railway-mcp-direct',
+        deploymentMethod: 'railway-mcp-with-dedicated-repo',
         projectId: project.id,
         serviceId: service.id,
-        domain: domain.domain
+        domain: domain.domain,
+        repositoryUrl: repository.html_url
       };
       
     } catch (error) {
-      console.log(`   ❌ Railway MCP direct deployment failed: ${error.message}`);
+      console.log(`   ❌ Railway MCP deployment failed: ${error.message}`);
       throw error; // No fallbacks - fail cleanly
     }
   }
