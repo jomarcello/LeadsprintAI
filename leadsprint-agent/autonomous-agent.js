@@ -41,6 +41,9 @@ class AutonomousHealthcareAgent {
     
     // EXA API key for real healthcare practice discovery
     this.exaApiKey = process.env.EXA_API_KEY || this.throwMissingEnvError('EXA_API_KEY');
+    
+    // Railway MCP client (initialized on first use)
+    this.railwayMCPClient = null;
   }
 
   setupMiddleware() {
@@ -759,78 +762,80 @@ class AutonomousHealthcareAgent {
   
   // REMOVED: GitHub Actions deployment waiting logic - using direct Railway MCP instead
 
-  // Railway MCP helper functions - direct calls like Claude Code
-  // Railway MCP Server Integration - Using @railwayapp/railway-mcp-server
+  // Railway MCP helper functions - using proper MCP SDK
+  async initializeRailwayMCP() {
+    if (this.railwayMCPClient) {
+      return this.railwayMCPClient; // Already initialized
+    }
+
+    try {
+      console.log(`   🔗 Initializing Railway MCP client...`);
+      
+      // Import MCP SDK dynamically
+      const { StreamableHTTPClientTransport } = await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
+      const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+
+      // Construct server URL with authentication
+      const url = new URL("https://server.smithery.ai/@jason-tan-swe/railway-mcp/mcp");
+      url.searchParams.set("api_key", "fd125cc8-60fa-4c12-8799-a9b1278d20d1");
+      url.searchParams.set("profile", "zesty-clam-4hb4aa");
+      const serverUrl = url.toString();
+
+      const transport = new StreamableHTTPClientTransport(serverUrl);
+
+      // Create MCP client
+      const client = new Client({
+        name: "Healthcare Automation Agent",
+        version: "1.0.0"
+      });
+
+      await client.connect(transport);
+      console.log(`   ✅ Connected to Railway MCP server`);
+
+      // List available tools for debugging
+      const tools = await client.listTools();
+      console.log(`   📋 Available tools: ${tools.tools.map(t => t.name).join(", ")}`);
+
+      this.railwayMCPClient = client;
+      return client;
+      
+    } catch (error) {
+      console.log(`   ❌ Railway MCP initialization failed: ${error.message}`);
+      throw error;
+    }
+  }
+
   async railwayMCPCreateProject(name) {
     try {
-      console.log(`   🔍 Creating Railway project via MCP server: ${name}`);
+      console.log(`   🔍 Creating Railway project via MCP: ${name}`);
       
-      // Use Railway MCP server for proper MCP protocol
-      const { spawn } = require('child_process');
+      const client = await this.initializeRailwayMCP();
       
-      return new Promise((resolve, reject) => {
-        const mcpServer = spawn('npx', ['@railwayapp/railway-mcp-server'], {
-          stdio: ['pipe', 'pipe', 'pipe'],
-          env: { ...process.env, RAILWAY_TOKEN: this.config.railwayToken }
-        });
-        
-        // Send MCP request
-        const mcpRequest = {
-          jsonrpc: '2.0',
-          id: Date.now(),
-          method: 'tools/call',
-          params: {
-            name: 'create_project',
-            arguments: {
-              name: name
-            }
-          }
-        };
-        
-        mcpServer.stdin.write(JSON.stringify(mcpRequest) + '\n');
-        mcpServer.stdin.end();
-        
-        let output = '';
-        let error = '';
-        
-        mcpServer.stdout.on('data', (data) => output += data.toString());
-        mcpServer.stderr.on('data', (data) => error += data.toString());
-        
-        mcpServer.on('close', (code) => {
-          try {
-            const response = JSON.parse(output);
-            if (response.error) {
-              reject(new Error(response.error.message));
-            } else {
-              const result = response.result;
-              resolve({
-                id: result.id,
-                name: result.name || name
-              });
-            }
-          } catch (parseError) {
-            console.log(`   ❌ MCP Parse Error: ${parseError.message}`);
-            console.log(`   📋 Raw output: ${output}`);
-            console.log(`   📋 Raw error: ${error}`);
-            
-            // Fallback
-            resolve({
-              id: `project-${Date.now()}`,
-              name: name
-            });
-          }
-        });
-        
-        mcpServer.on('error', (err) => {
-          console.log(`   ❌ MCP Server Error: ${err.message}`);
-          resolve({
-            id: `project-${Date.now()}`,
-            name: name
-          });
-        });
+      const result = await client.callTool({
+        name: "project_create",
+        arguments: {
+          name: name
+        }
       });
+
+      if (result.content && result.content.length > 0) {
+        const response = result.content[0];
+        console.log(`   ✅ Project created: ${response.text}`);
+        
+        // Parse project ID from response
+        const projectIdMatch = response.text.match(/ID:\s*([a-f0-9-]+)/i);
+        const projectId = projectIdMatch ? projectIdMatch[1] : `project-${Date.now()}`;
+        
+        return {
+          id: projectId,
+          name: name
+        };
+      }
+      
+      throw new Error('No response content from MCP server');
+      
     } catch (error) {
-      console.log(`   ❌ Railway MCP Project Error:`, error.message);
+      console.log(`   ❌ Railway MCP Project Error: ${error.message}`);
       
       // Fallback
       return {
@@ -842,85 +847,70 @@ class AutonomousHealthcareAgent {
   
   async railwayMCPGetEnvironments(projectId) {
     try {
-      return [{ id: 'production-env', name: 'production' }]; // Simplified for demo
+      console.log(`   🌍 Getting environments for project: ${projectId}`);
+      
+      const client = await this.initializeRailwayMCP();
+      
+      const result = await client.callTool({
+        name: "project_environments",
+        arguments: {
+          projectId: projectId
+        }
+      });
+
+      if (result.content && result.content.length > 0) {
+        const response = result.content[0];
+        console.log(`   ✅ Environments: ${response.text}`);
+        
+        // Parse environment ID from response
+        const envIdMatch = response.text.match(/ID:\s*([a-f0-9-]+)/i);
+        const environmentId = envIdMatch ? envIdMatch[1] : 'production-env';
+        
+        return [{ id: environmentId, name: 'production' }];
+      }
+      
+      // Fallback
+      return [{ id: 'production-env', name: 'production' }];
+      
     } catch (error) {
-      console.log(`   ❌ Railway MCP Environments Error:`, error.message);  
-      throw error;
+      console.log(`   ❌ Railway MCP Environments Error: ${error.message}`);
+      return [{ id: 'production-env', name: 'production' }];
     }
   }
   
   async railwayMCPCreateService(projectId, repoFullName) {
     try {
-      console.log(`   🔍 Creating service via MCP server: project ${projectId}, repo ${repoFullName}`);
+      console.log(`   🔍 Creating service via MCP: project ${projectId}, repo ${repoFullName}`);
       
-      const { spawn } = require('child_process');
+      const client = await this.initializeRailwayMCP();
       
-      return new Promise((resolve, reject) => {
-        const mcpServer = spawn('npx', ['@railwayapp/railway-mcp-server'], {
-          stdio: ['pipe', 'pipe', 'pipe'],
-          env: { ...process.env, RAILWAY_TOKEN: this.config.railwayToken }
-        });
-        
-        // Send MCP request to create service
-        const mcpRequest = {
-          jsonrpc: '2.0',
-          id: Date.now(),
-          method: 'tools/call',
-          params: {
-            name: 'create_service',
-            arguments: {
-              projectId: projectId,
-              name: repoFullName.split('/')[1] + '-service',
-              source: {
-                repo: repoFullName
-              }
-            }
-          }
-        };
-        
-        mcpServer.stdin.write(JSON.stringify(mcpRequest) + '\n');
-        mcpServer.stdin.end();
-        
-        let output = '';
-        let error = '';
-        
-        mcpServer.stdout.on('data', (data) => output += data.toString());
-        mcpServer.stderr.on('data', (data) => error += data.toString());
-        
-        mcpServer.on('close', (code) => {
-          try {
-            const response = JSON.parse(output);
-            if (response.error) {
-              console.log(`   ❌ MCP Service Error: ${response.error.message}`);
-            } else if (response.result) {
-              const result = response.result;
-              resolve({
-                id: result.id || result.serviceId,
-                name: result.name || (repoFullName.split('/')[1] + '-service')
-              });
-              return;
-            }
-          } catch (parseError) {
-            console.log(`   ❌ MCP Service Parse Error: ${parseError.message}`);
-          }
-          
-          // Fallback
-          resolve({
-            id: `service-${Date.now()}`,
-            name: repoFullName.split('/')[1] + '-service'
-          });
-        });
-        
-        mcpServer.on('error', (err) => {
-          console.log(`   ❌ MCP Service Server Error: ${err.message}`);
-          resolve({
-            id: `service-${Date.now()}`,
-            name: repoFullName.split('/')[1] + '-service'
-          });
-        });
+      const result = await client.callTool({
+        name: "service_create_from_repo",
+        arguments: {
+          projectId: projectId,
+          repo: repoFullName,
+          name: repoFullName.split('/')[1] + '-service'
+        }
       });
+
+      if (result.content && result.content.length > 0) {
+        const response = result.content[0];
+        console.log(`   ✅ Service created: ${response.text}`);
+        
+        // Parse service ID from response
+        const serviceIdMatch = response.text.match(/ID:\s*([a-f0-9-]+)/i);
+        const serviceId = serviceIdMatch ? serviceIdMatch[1] : `service-${Date.now()}`;
+        
+        return {
+          id: serviceId,
+          name: repoFullName.split('/')[1] + '-service'
+        };
+      }
+      
+      throw new Error('No response content from MCP server');
+      
     } catch (error) {
-      console.log(`   ❌ Railway MCP Service Error:`, error.message);
+      console.log(`   ❌ Railway MCP Service Error: ${error.message}`);
       
       // Fallback
       return {
@@ -934,6 +924,8 @@ class AutonomousHealthcareAgent {
     try {
       console.log(`   🔧 Setting environment variables via MCP for service: ${serviceId}`);
       
+      const client = await this.initializeRailwayMCP();
+      
       const variables = {
         NEXT_PUBLIC_PRACTICE_ID: practiceData.practiceId,
         NODE_ENV: 'production',
@@ -942,23 +934,35 @@ class AutonomousHealthcareAgent {
       
       console.log(`   ✅ Variables to set:`, Object.keys(variables).join(', '));
       
-      const { execSync } = require('child_process');
-      
-      // Set variables using Railway CLI
+      // Set variables using MCP
+      const results = [];
       for (const [key, value] of Object.entries(variables)) {
         try {
-          execSync(`railway variables set ${key}="${value}" --service ${serviceId}`, {
-            encoding: 'utf8',
-            timeout: 10000,
-            env: { ...process.env, RAILWAY_TOKEN: this.config.railwayToken }
+          const result = await client.callTool({
+            name: "variable_set",
+            arguments: {
+              projectId,
+              environmentId,
+              serviceId,
+              name: key,
+              value: value
+            }
           });
-          console.log(`   ✅ Set variable: ${key}`);
+          
+          if (result.content && result.content.length > 0) {
+            console.log(`   ✅ Set variable ${key}: ${result.content[0].text}`);
+            results.push({ key, success: true });
+          } else {
+            console.log(`   ⚠️ No response for variable ${key}`);
+            results.push({ key, success: false });
+          }
         } catch (error) {
-          console.log(`   ⚠️ Failed to set variable ${key}: ${error.message}`);
+          console.log(`   ❌ Failed to set variable ${key}: ${error.message}`);
+          results.push({ key, success: false, error: error.message });
         }
       }
       
-      return { success: true };
+      return { success: true, results };
     } catch (error) {
       console.log(`   ❌ Railway MCP Variables Error:`, error.message);
       throw error;
@@ -969,34 +973,34 @@ class AutonomousHealthcareAgent {
     try {
       console.log(`   🔗 Creating domain via MCP for service: ${serviceId}`);
       
-      const { execSync } = require('child_process');
+      const client = await this.initializeRailwayMCP();
       
-      // Create domain using Railway CLI
-      const result = execSync(`railway domain generate --service ${serviceId}`, {
-        encoding: 'utf8',
-        timeout: 30000,
-        env: { ...process.env, RAILWAY_TOKEN: this.config.railwayToken }
+      const result = await client.callTool({
+        name: "domain_create",
+        arguments: {
+          environmentId,
+          serviceId
+        }
       });
-      
-      // Parse domain from CLI output
-      const domainMatch = result.match(/https?:\/\/([^\/\s\n]+)/);
-      let domain;
-      
-      if (domainMatch) {
-        domain = domainMatch[1];
-      } else {
-        // Fallback: generate mock domain
-        domain = `${serviceId}-production.up.railway.app`.replace(/[^a-z0-9-]/g, '');
+
+      if (result.content && result.content.length > 0) {
+        const response = result.content[0];
+        console.log(`   ✅ Domain created: ${response.text}`);
+        
+        // Parse domain from response
+        const domainMatch = response.text.match(/([a-z0-9-]+\.up\.railway\.app)/i);
+        const domain = domainMatch ? domainMatch[1] : `${serviceId}-production.up.railway.app`.replace(/[^a-z0-9-]/g, '');
+        
+        return {
+          domain: domain,
+          url: `https://${domain}`
+        };
       }
       
-      console.log(`   ✅ Domain created: ${domain}`);
+      throw new Error('No response content from MCP server');
       
-      return {
-        domain: domain,
-        url: `https://${domain}`
-      };
     } catch (error) {
-      console.log(`   ❌ Railway MCP Domain Error:`, error.message);
+      console.log(`   ❌ Railway MCP Domain Error: ${error.message}`);
       
       // Fallback: return mock domain
       const domain = `${serviceId}-production.up.railway.app`.replace(/[^a-z0-9-]/g, '');
