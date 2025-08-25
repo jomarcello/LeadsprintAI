@@ -2,15 +2,11 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "node leadsprint-agent/autonomous-agent.js"
-healthcheckPath = "/health"
-healthcheckTimeout = 30
-restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 10
-
-[build.env]
-NIXPACKS_BUILD_COMMAND = "npm ci --production"
-NIXPACKS_SKIP_BUILD = "true"
+startCommand = "npm start"
+healthcheckPath = "/"
+healthcheckTimeout = 100
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
 
 [[services]]
 name = "web"
