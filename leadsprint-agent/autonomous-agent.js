@@ -271,14 +271,9 @@ class AutonomousHealthcareAgent {
       const agentId = await this.createElevenLabsAgent(scrapedData);
       console.log(`   ✅ Created voice agent: ${agentId}`);
       
-      // PHASE 3: GitHub Repository Creation & Personalization
-      console.log(chalk.cyan(`📦 PHASE 3: GitHub Repository & Personalization`));
-      const repository = await this.createPersonalizedRepository(scrapedData, agentId);
-      console.log(`   ✅ Created repository: ${repository.name}`);
-      
-      // PHASE 4: Railway Deployment
-      console.log(chalk.cyan(`🚂 PHASE 4: Railway Deployment`));
-      const deployment = await this.deployToRailway(scrapedData, repository);
+      // PHASE 3: Direct Railway MCP Deployment
+      console.log(chalk.cyan(`🚂 PHASE 3: Railway MCP Deployment`));
+      const deployment = await this.deployDirectlyToRailway(scrapedData, agentId);
       console.log(`   ✅ Deployed to Railway: ${deployment.url}`);
       
       // PHASE 5: Final Notion Update
@@ -297,7 +292,7 @@ class AutonomousHealthcareAgent {
         demoUrl: deployment.url,
         agentId,
         notionId: notionPage.id,
-        repositoryUrl: repository.html_url,
+        deploymentMethod: 'railway-mcp-direct',
         duration: Math.round(duration / 1000),
         timestamp: new Date().toISOString()
       };
@@ -760,6 +755,58 @@ class AutonomousHealthcareAgent {
     }
   }
   
+  async deployDirectlyToRailway(practiceData, agentId) {
+    try {
+      console.log(`   🚂 Creating Railway project via MCP (no GitHub repo needed)...`);
+      
+      // Use clean practice name for project
+      const projectName = `${practiceData.practiceId}-mcp-demo`;
+      
+      // Create project using MCP
+      const project = await this.railwayMCPCreateProject(projectName);
+      console.log(`   ✅ Railway project created: ${project.name}`);
+      
+      // Get environments using MCP  
+      const environments = await this.railwayMCPGetEnvironments(project.id);
+      const prodEnv = environments.find(env => env.name === 'production') || environments[0];
+      console.log(`   ✅ Found environment: ${prodEnv.name} (${prodEnv.id})`);
+      
+      // Deploy from our main Agentsdemo repo directly (no new repo creation)
+      const mainRepoName = "jomarcello/Agentsdemo";  // Use existing main template repo
+      const service = await this.railwayMCPCreateService(project.id, mainRepoName);
+      console.log(`   ✅ Railway service created from main template: ${service.name}`);
+      
+      // Set environment variables using MCP only (no GraphQL fallback)
+      const variables = {
+        NEXT_PUBLIC_PRACTICE_ID: practiceData.practiceId,
+        NEXT_PUBLIC_COMPANY_NAME: practiceData.company,
+        NEXT_PUBLIC_DOCTOR_NAME: practiceData.contactName || practiceData.doctor,
+        NEXT_PUBLIC_PRACTICE_LOCATION: practiceData.location || 'Healthcare Center',
+        NODE_ENV: 'production'
+      };
+      
+      await this.railwayMCPSetVariables(project.id, prodEnv.id, service.id, variables);
+      console.log(`   ✅ Environment variables set successfully via MCP`);
+      
+      // Create domain using MCP only (no GraphQL fallback)
+      const domain = await this.railwayMCPCreateDomain(project.id, prodEnv.id, service.id);
+      console.log(`   ✅ Domain created: ${domain.domain}`);
+      
+      return {
+        url: `https://${domain.domain}`,
+        status: 'deployed', 
+        deploymentMethod: 'railway-mcp-direct',
+        projectId: project.id,
+        serviceId: service.id,
+        domain: domain.domain
+      };
+      
+    } catch (error) {
+      console.log(`   ❌ Railway MCP direct deployment failed: ${error.message}`);
+      throw error; // No fallbacks - fail cleanly
+    }
+  }
+  
   // REMOVED: GitHub Actions deployment waiting logic - using direct Railway MCP instead
 
   // Railway MCP helper functions - using proper MCP SDK
@@ -920,17 +967,11 @@ class AutonomousHealthcareAgent {
     }
   }
   
-  async railwayMCPSetVariables(projectId, environmentId, serviceId, practiceData) {
+  async railwayMCPSetVariables(projectId, environmentId, serviceId, variables) {
     try {
       console.log(`   🔧 Setting environment variables via MCP for service: ${serviceId}`);
       
       const client = await this.initializeRailwayMCP();
-      
-      const variables = {
-        NEXT_PUBLIC_PRACTICE_ID: practiceData.practiceId,
-        NODE_ENV: 'production',
-        PORT: '3000'
-      };
       
       console.log(`   ✅ Variables to set:`, Object.keys(variables).join(', '));
       
@@ -1011,203 +1052,9 @@ class AutonomousHealthcareAgent {
     }
   }
   
-  async railwaySetVariables(projectId, environmentId, serviceId, practiceData) {
-    console.log(`   🔧 Setting Railway environment variables via CLI for service: ${serviceId}`);
-    
-    const variables = {
-      NEXT_PUBLIC_PRACTICE_ID: practiceData.practiceId,
-      NEXT_PUBLIC_COMPANY_NAME: practiceData.company,
-      NODE_ENV: 'production'
-    };
-    
-    console.log(`   📋 Variables to set:`, variables);
-    
-    try {
-      const { spawn } = await import('child_process');
-      
-      for (const [key, value] of Object.entries(variables)) {
-        console.log(`   🔗 Setting variable via CLI: ${key} = ${value}`);
-        
-        await new Promise((resolve, reject) => {
-          const process = spawn('railway', ['variables', 'set', `${key}=${value}`, '--service', serviceId], {
-            env: { 
-              ...process.env, 
-              RAILWAY_TOKEN: this.config.railwayToken 
-            },
-            stdio: 'pipe'
-          });
-          
-          let output = '';
-          let errorOutput = '';
-          
-          process.stdout?.on('data', (data) => {
-            output += data.toString();
-          });
-          
-          process.stderr?.on('data', (data) => {
-            errorOutput += data.toString();
-          });
-          
-          process.on('close', (code) => {
-            if (code === 0) {
-              console.log(`   ✅ Variable ${key} set successfully via CLI`);
-              resolve();
-            } else {
-              console.log(`   ❌ Railway CLI failed for ${key}: ${errorOutput}`);
-              reject(new Error(`Railway CLI failed: ${errorOutput}`));
-            }
-          });
-          
-          process.on('error', (error) => {
-            console.log(`   ❌ Railway CLI spawn error for ${key}: ${error.message}`);
-            reject(error);
-          });
-        });
-      }
-      
-      console.log(`   ✅ All Railway environment variables set successfully via CLI`);
-    } catch (error) {
-      console.log(`   ❌ Railway CLI variable setting failed:`, error.message);
-      console.log(`   ⚠️ Falling back to GraphQL API...`);
-      
-      // Fallback to original GraphQL approach (but don't fail deployment)
-      try {
-        for (const [key, value] of Object.entries(variables)) {
-          console.log(`   🔗 Fallback: Setting variable via GraphQL: ${key}`);
-          
-          const response = await axios.post('https://api.railway.app/graphql/v2', {
-            query: `mutation variableUpsert($input: VariableUpsertInput!) {
-              variableUpsert(input: $input) { id }
-            }`,
-            variables: {
-              input: {
-                name: key,
-                value: String(value),
-                projectId: projectId,
-                environmentId: environmentId,
-                serviceId: serviceId
-              }
-            }
-          }, {
-            headers: {
-              'Authorization': `Bearer ${this.config.railwayToken}`,
-              'Content-Type': 'application/json'
-            }
-          });
-          
-          if (response.data.errors) {
-            throw new Error(`GraphQL error: ${JSON.stringify(response.data.errors)}`);
-          }
-          
-          console.log(`   ✅ Variable ${key} set via GraphQL fallback`);
-        }
-      } catch (fallbackError) {
-        console.log(`   ❌ Both CLI and GraphQL failed: ${fallbackError.message}`);
-        console.log(`   ⚠️ Continuing deployment without environment variables...`);
-      }
-    }
-  }
+  // REMOVED: Old Railway CLI function with GraphQL fallbacks - replaced with pure MCP
   
-  async railwayCreateDomain(projectId, environmentId, serviceId) {
-    console.log(`   🌐 Creating Railway domain via CLI for service: ${serviceId}`);
-    console.log(`   🔗 Using projectId: ${projectId}, environmentId: ${environmentId}`);
-    
-    try {
-      const { spawn } = await import('child_process');
-      
-      // Try Railway CLI first
-      const domain = await new Promise((resolve, reject) => {
-        const process = spawn('railway', ['domain', 'generate', '--service', serviceId], {
-          env: { 
-            ...process.env, 
-            RAILWAY_TOKEN: this.config.railwayToken 
-          },
-          stdio: 'pipe'
-        });
-        
-        let output = '';
-        let errorOutput = '';
-        
-        process.stdout?.on('data', (data) => {
-          output += data.toString();
-        });
-        
-        process.stderr?.on('data', (data) => {
-          errorOutput += data.toString();
-        });
-        
-        process.on('close', (code) => {
-          if (code === 0) {
-            // Extract domain from CLI output
-            const domainMatch = output.match(/https?:\/\/([^\/\s]+)/);
-            if (domainMatch) {
-              const domain = domainMatch[1];
-              console.log(`   ✅ Railway domain created via CLI: ${domain}`);
-              resolve(domain);
-            } else {
-              reject(new Error('Could not extract domain from CLI output'));
-            }
-          } else {
-            console.log(`   ❌ Railway CLI domain creation failed: ${errorOutput}`);
-            reject(new Error(`Railway CLI failed: ${errorOutput}`));
-          }
-        });
-        
-        process.on('error', (error) => {
-          console.log(`   ❌ Railway CLI spawn error: ${error.message}`);
-          reject(error);
-        });
-      });
-      
-      return {
-        url: `https://${domain}`,
-        domain
-      };
-      
-    } catch (error) {
-      console.log(`   ❌ Railway CLI domain creation failed:`, error.message);
-      console.log(`   🔄 Falling back to GraphQL API...`);
-      
-      try {
-        const response = await axios.post('https://api.railway.app/graphql/v2', {
-          query: `mutation DomainCreate($input: DomainCreateInput!) {
-            domainCreate(input: $input) {
-              domain
-            }
-          }`,
-          variables: {
-            input: {
-              projectId,
-              environmentId,
-              serviceId
-            }
-          }
-        }, {
-          headers: {
-            'Authorization': `Bearer ${this.config.railwayToken}`,
-            'Content-Type': 'application/json'
-          }
-        });
-        
-        console.log(`   🔍 GraphQL Domain Response:`, JSON.stringify(response.data, null, 2));
-        
-        if (response.data.errors) {
-          throw new Error(`Railway domain GraphQL error: ${JSON.stringify(response.data.errors)}`);
-        }
-        
-        const domain = response.data.data.domainCreate.domain;
-        console.log(`   ✅ Railway domain created via GraphQL fallback: ${domain}`);
-        
-        return {
-          url: `https://${domain}`,
-          domain
-        };
-      } catch (fallbackError) {
-        console.log(`   ❌ Both CLI and GraphQL domain creation failed:`, fallbackError.message);
-        throw new Error(`Railway domain creation completely failed: ${error.message} | ${fallbackError.message}`);
-      }
-    }
-  }
+  // REMOVED: Old Railway CLI domain function with GraphQL fallbacks - replaced with pure MCP
   async createRailwayProject(companyName) {
     const { spawn } = await import('child_process');
     const projectName = `${companyName.toLowerCase().replace(/[^a-z0-9]/g, '-')}-ai-demo`;
