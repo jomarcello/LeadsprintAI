@@ -1,13 +1,23 @@
 {
   "name": "healthcare-part1",
   "version": "1.0.0",
+  "description": "Healthcare Lead Discovery Agent with EXA, OpenRouter AI, and Notion CRM",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "dev": "node index.js"
   },
   "dependencies": {
     "express": "^4.18.2",
     "cors": "^2.8.5",
-    "axios": "^1.6.0"
-  }
+    "axios": "^1.6.0",
+    "@notionhq/client": "^2.2.3",
+    "dotenv": "^16.3.1",
+    "openai": "^4.28.0",
+    "validator": "^13.11.0",
+    "rate-limiter-flexible": "^3.0.0"
+  },
+  "keywords": ["healthcare", "lead-generation", "exa", "notion", "telegram", "openrouter"],
+  "author": "Healthcare Automation Agent",
+  "license": "MIT"
 }
