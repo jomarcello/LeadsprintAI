@@ -5,7 +5,7 @@ const axios = require('axios');
 const { Client } = require('@notionhq/client');
 const OpenAI = require('openai');
 const validator = require('validator');
-const { RateLimiterFlexible } = require('rate-limiter-flexible');
+const RateLimiterFlexible = require('rate-limiter-flexible').RateLimiterFlexible;
 
 const app = express();
 app.use(cors());
