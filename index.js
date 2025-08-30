@@ -5,7 +5,7 @@ const axios = require('axios');
 const { Client } = require('@notionhq/client');
 const OpenAI = require('openai');
 const validator = require('validator');
-const RateLimiterFlexible = require('rate-limiter-flexible').RateLimiterFlexible;
+const { RateLimiterMemory } = require('rate-limiter-flexible');
 
 const app = express();
 app.use(cors());
@@ -24,7 +24,7 @@ const openai = new OpenAI({
 });
 
 // Rate limiting
-const telegramLimiter = new RateLimiterFlexible({
+const telegramLimiter = new RateLimiterMemory({
     keyPrefix: 'telegram_webhook',
     points: 10,
     duration: 60,
