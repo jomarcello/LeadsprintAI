@@ -18,12 +18,16 @@ const notion = new Client({
     auth: process.env.NOTION_TOKEN 
 });
 
+console.log('🔧 OpenRouter API Key:', process.env.OPENROUTER_API_KEY ? 'Set' : 'Missing');
+console.log('🌐 Railway Public Domain:', process.env.RAILWAY_PUBLIC_DOMAIN);
+
 const openai = new OpenAI({
     apiKey: process.env.OPENROUTER_API_KEY,
     baseURL: 'https://openrouter.ai/api/v1',
     defaultHeaders: {
-        'HTTP-Referer': 'https://healthcare-part1-final-production.up.railway.app',
-        'X-Title': 'Healthcare Lead Discovery Agent'
+        'HTTP-Referer': `https://${process.env.RAILWAY_PUBLIC_DOMAIN || 'healthcare-part1-final-production.up.railway.app'}`,
+        'X-Title': 'Healthcare Lead Discovery Agent',
+        'Content-Type': 'application/json'
     }
 });
 
