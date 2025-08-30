@@ -21,6 +21,10 @@ const notion = new Client({
 const openai = new OpenAI({
     apiKey: process.env.OPENROUTER_API_KEY,
     baseURL: 'https://openrouter.ai/api/v1',
+    defaultHeaders: {
+        'HTTP-Referer': 'https://healthcare-part1-final-production.up.railway.app',
+        'X-Title': 'Healthcare Lead Discovery Agent'
+    }
 });
 
 // Rate limiting
