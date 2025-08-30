@@ -38,7 +38,295 @@ class HealthcareLeadAgent {
         this.successCount = 0;
     }
 
-    // PHASE 2: EXA Integration - Real web scraping
+    // NEW: AI-Powered Lead Discovery with EXA Tools
+    async discoverLeads(query) {
+        console.log(`🎯 Starting AI lead discovery for: "${query}"`);
+        
+        try {
+            const aiResponse = await openai.chat.completions.create({
+                model: 'deepseek/deepseek-chat-v3.1:free',
+                messages: [
+                    {
+                        role: 'system',
+                        content: `You are a healthcare lead discovery agent. You have access to EXA AI search tools to find healthcare leads.
+
+Available tools:
+1. exa_search(query, num_results) - Search for healthcare practices
+2. exa_get_content(url) - Get detailed content from a website
+
+Your task: Find healthcare leads based on user queries. Always return results as JSON in this format:
+{
+  "leads": [
+    {
+      "company": "practice name",
+      "url": "website url",
+      "services": ["service1", "service2"],
+      "specializations": ["spec1", "spec2"],
+      "location": "city, state",
+      "contact": {"phone": "...", "email": "..."},
+      "practice_type": "type",
+      "lead_score": 85
+    }
+  ],
+  "search_summary": "what you searched for",
+  "total_found": 1
+}`
+                    },
+                    {
+                        role: 'user',
+                        content: `Find healthcare leads for: "${query}"`
+                    }
+                ],
+                functions: [
+                    {
+                        name: 'exa_search',
+                        description: 'Search for healthcare practices using EXA AI',
+                        parameters: {
+                            type: 'object',
+                            properties: {
+                                query: { type: 'string', description: 'Search query for healthcare practices' },
+                                num_results: { type: 'integer', description: 'Number of results to return', default: 3 }
+                            },
+                            required: ['query']
+                        }
+                    },
+                    {
+                        name: 'exa_get_content',
+                        description: 'Get detailed content from a healthcare website',
+                        parameters: {
+                            type: 'object',
+                            properties: {
+                                url: { type: 'string', description: 'Website URL to analyze' }
+                            },
+                            required: ['url']
+                        }
+                    }
+                ],
+                function_call: 'auto',
+                temperature: 0.3,
+                max_tokens: 2000
+            });
+
+            // Handle function calls
+            const message = aiResponse.choices[0].message;
+            
+            if (message.function_call) {
+                const functionName = message.function_call.name;
+                const functionArgs = JSON.parse(message.function_call.arguments);
+                
+                console.log(`🔧 AI calling function: ${functionName}`, functionArgs);
+                
+                let functionResult;
+                if (functionName === 'exa_search') {
+                    functionResult = await this.exaSearch(functionArgs.query, functionArgs.num_results || 3);
+                } else if (functionName === 'exa_get_content') {
+                    functionResult = await this.exaGetContent(functionArgs.url);
+                }
+                
+                // Continue conversation with function result
+                const finalResponse = await openai.chat.completions.create({
+                    model: 'deepseek/deepseek-chat-v3.1:free',
+                    messages: [
+                        {
+                            role: 'system',
+                            content: `You are a healthcare lead discovery agent. Analyze the search results and extract structured lead information. Return valid JSON only.`
+                        },
+                        {
+                            role: 'user',
+                            content: `Query: "${query}"`
+                        },
+                        {
+                            role: 'assistant',
+                            content: null,
+                            function_call: message.function_call
+                        },
+                        {
+                            role: 'function',
+                            name: functionName,
+                            content: JSON.stringify(functionResult)
+                        },
+                        {
+                            role: 'user',
+                            content: 'Now extract and structure this data into healthcare leads. Return only JSON.'
+                        }
+                    ],
+                    temperature: 0.1,
+                    max_tokens: 1500
+                });
+                
+                const resultText = finalResponse.choices[0].message.content;
+                return JSON.parse(resultText);
+            }
+            
+            // If no function call, try to parse direct response
+            const resultText = message.content;
+            return JSON.parse(resultText);
+            
+        } catch (error) {
+            console.error('❌ AI lead discovery failed:', error);
+            return {
+                leads: [],
+                error: error.message,
+                search_summary: `Failed to process: ${query}`,
+                total_found: 0
+            };
+        }
+    }
+
+    // EXA Search Function (called by AI)
+    async exaSearch(query, numResults = 3) {
+        console.log(`🔍 EXA Search: "${query}" (${numResults} results)`);
+        
+        if (!process.env.EXA_API_KEY) {
+            throw new Error('EXA API key not configured');
+        }
+
+        try {
+            const response = await axios.post('https://api.exa.ai/search', {
+                query: query,
+                type: 'neural',
+                useAutoprompt: true,
+                numResults: numResults,
+                contents: {
+                    text: {
+                        maxCharacters: 2000,
+                        includeHtmlTags: false
+                    }
+                }
+            }, {
+                headers: {
+                    'x-api-key': process.env.EXA_API_KEY,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 30000
+            });
+
+            return {
+                results: response.data.results || [],
+                total: response.data.results?.length || 0
+            };
+
+        } catch (error) {
+            console.error(`❌ EXA search failed: ${error.message}`);
+            throw error;
+        }
+    }
+
+    // EXA Get Content Function (called by AI)
+    async exaGetContent(url) {
+        console.log(`📄 EXA Get Content: ${url}`);
+        
+        if (!process.env.EXA_API_KEY) {
+            throw new Error('EXA API key not configured');
+        }
+
+        try {
+            const response = await axios.post('https://api.exa.ai/contents', {
+                ids: [url],
+                text: {
+                    maxCharacters: 4000,
+                    includeHtmlTags: false
+                }
+            }, {
+                headers: {
+                    'x-api-key': process.env.EXA_API_KEY,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 30000
+            });
+
+            return {
+                content: response.data.contents?.[0]?.text || '',
+                url: url
+            };
+
+        } catch (error) {
+            console.error(`❌ EXA content fetch failed: ${error.message}`);
+            throw error;
+        }
+    }
+
+    // NEW: Send individual lead result to Telegram
+    async sendLeadResult(chatId, lead) {
+        const message = `
+🏥 <b>${lead.company || 'Healthcare Practice'}</b>
+
+🌐 <b>Website:</b> ${lead.url || 'N/A'}
+📍 <b>Location:</b> ${lead.location || 'N/A'}
+🏷️ <b>Type:</b> ${lead.practice_type || 'Healthcare'}
+
+🔹 <b>Services:</b>
+${lead.services?.map(s => `• ${s}`).join('\n') || '• Information not available'}
+
+💎 <b>Specializations:</b>
+${lead.specializations?.map(s => `• ${s}`).join('\n') || '• General practice'}
+
+📞 <b>Contact:</b>
+${lead.contact?.phone ? `• Phone: ${lead.contact.phone}` : ''}
+${lead.contact?.email ? `• Email: ${lead.contact.email}` : ''}
+
+🎯 <b>Lead Score:</b> ${lead.lead_score || 0}/100
+
+💾 <i>Saved to Notion CRM</i>
+        `;
+
+        await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            chat_id: chatId,
+            text: message.trim(),
+            parse_mode: 'HTML'
+        });
+    }
+
+    // NEW: Store lead in Notion CRM
+    async storeInNotion(lead) {
+        if (!process.env.NOTION_TOKEN || !process.env.NOTION_DATABASE_ID) {
+            console.warn('⚠️ Notion not configured, skipping storage');
+            return;
+        }
+
+        try {
+            await notion.pages.create({
+                parent: {
+                    database_id: process.env.NOTION_DATABASE_ID
+                },
+                properties: {
+                    'Company': {
+                        title: [{ text: { content: lead.company || 'Unknown' } }]
+                    },
+                    'URL': {
+                        url: lead.url || null
+                    },
+                    'Location': {
+                        rich_text: [{ text: { content: lead.location || 'N/A' } }]
+                    },
+                    'Practice Type': {
+                        select: { name: lead.practice_type || 'Healthcare' }
+                    },
+                    'Lead Score': {
+                        number: lead.lead_score || 0
+                    },
+                    'Services': {
+                        multi_select: lead.services?.slice(0, 5).map(service => ({ name: service.substring(0, 50) })) || []
+                    },
+                    'Phone': {
+                        phone_number: lead.contact?.phone || null
+                    },
+                    'Email': {
+                        email: lead.contact?.email || null
+                    },
+                    'Discovery Date': {
+                        date: { start: new Date().toISOString().split('T')[0] }
+                    }
+                }
+            });
+
+            console.log(`✅ Stored ${lead.company} in Notion CRM`);
+        } catch (error) {
+            console.error(`❌ Failed to store ${lead.company} in Notion:`, error.message);
+        }
+    }
+
+    // Legacy method for URL processing (kept for compatibility)
     async searchWithExa(url, companyName) {
         console.log(`🔍 EXA Search: ${companyName} at ${url}`);
         
@@ -628,45 +916,47 @@ app.post('/telegram-webhook', async (req, res) => {
         // Rate limiting
         await telegramLimiter.consume(chatId);
 
+        // Check if message contains URL (legacy support)
         const urlMatch = messageText.match(/https?:\/\/[^\s]+/);
         
         if (urlMatch) {
             const url = urlMatch[0];
             
-            // Send start message
+            // Legacy URL processing
             await agent.sendProgressUpdate(chatId, 1, 3, 'Starting healthcare lead discovery...');
-            
-            // Process the lead
             await agent.sendProgressUpdate(chatId, 2, 3, 'Analyzing website with EXA and AI...');
             const result = await agent.processHealthcareLead(url);
-            
-            // Send final results
             await agent.sendProgressUpdate(chatId, 3, 3, 'Storing in Notion CRM...');
             await agent.sendRichLeadSummary(chatId, result);
             
         } else if (messageText.toLowerCase().includes('/start') || messageText.toLowerCase().includes('/help')) {
             const helpMessage = `
-🏥 <b>Healthcare Lead Discovery Agent</b>
+🏥 <b>AI Healthcare Lead Discovery Agent</b>
 
-🚀 <b>How to use:</b>
-Send me any healthcare practice URL and I'll:
+🤖 <b>I can find healthcare leads for you!</b>
 
-🔍 <b>Step 1:</b> Scrape with EXA AI
-🤖 <b>Step 2:</b> Analyze with OpenRouter AI  
-📊 <b>Step 3:</b> Store in Notion CRM
+<b>Examples:</b>
+• "find 2 cosmetic clinics in Amsterdam"
+• "search for dental practices in London"
+• "find dermatology clinics in New York"
+• "look for plastic surgery centers in Berlin"
 
-<b>Example:</b>
-https://drclinic.com
-https://aestheticspa.com
-https://dentalcare.co.uk
+🔧 <b>How it works:</b>
+🎯 <b>Step 1:</b> AI understands your query
+🔍 <b>Step 2:</b> Searches web with EXA AI tools
+🤖 <b>Step 3:</b> Analyzes websites with OpenRouter AI
+📊 <b>Step 4:</b> Stores leads in Notion CRM
 
-🎯 <b>I extract:</b>
-• Services & treatments
+✨ <b>I extract:</b>
+• Company name & website
+• Services & specializations  
 • Contact information
+• Location details
 • Lead quality score (0-100)
-• Practice specializations
 
-💾 <b>All leads saved to your Notion database!</b>
+💾 <b>All leads automatically saved!</b>
+
+Just tell me what healthcare leads you're looking for! 🚀
 `;
             
             await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
@@ -675,10 +965,44 @@ https://dentalcare.co.uk
                 parse_mode: 'HTML'
             });
         } else {
-            await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-                chat_id: chatId,
-                text: '🏥 Send me a healthcare practice URL to analyze!\n\nExample: https://your-healthcare-site.com',
-            });
+            // NEW: AI Lead Discovery for natural language queries
+            await agent.sendProgressUpdate(chatId, 1, 4, '🎯 Understanding your lead request...');
+            
+            const discoveryResult = await agent.discoverLeads(messageText);
+            
+            await agent.sendProgressUpdate(chatId, 2, 4, '🔍 Searching with EXA AI...');
+            await agent.sendProgressUpdate(chatId, 3, 4, '📊 Storing leads in Notion CRM...');
+            
+            if (discoveryResult.leads && discoveryResult.leads.length > 0) {
+                await agent.sendProgressUpdate(chatId, 4, 4, '✅ Lead discovery complete!');
+                
+                // Store leads in Notion and send response
+                for (const lead of discoveryResult.leads) {
+                    await agent.storeInNotion(lead);
+                    await agent.sendLeadResult(chatId, lead);
+                }
+                
+                // Send summary
+                await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                    chat_id: chatId,
+                    text: `🎉 <b>Discovery Complete!</b>\n\n` +
+                          `📊 Found: <b>${discoveryResult.total_found}</b> leads\n` +
+                          `🔍 Search: <i>${discoveryResult.search_summary}</i>\n\n` +
+                          `💾 All leads saved to your Notion CRM database!`,
+                    parse_mode: 'HTML'
+                });
+            } else {
+                await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                    chat_id: chatId,
+                    text: `❌ <b>No leads found</b>\n\n` +
+                          `🔍 Search: <i>${discoveryResult.search_summary}</i>\n\n` +
+                          `💡 Try different keywords or location!\n\n` +
+                          `<b>Examples:</b>\n` +
+                          `• "find cosmetic clinics in Madrid"\n` +
+                          `• "search dental practices near Paris"`,
+                    parse_mode: 'HTML'
+                });
+            }
         }
 
         res.json({ status: 'ok' });
