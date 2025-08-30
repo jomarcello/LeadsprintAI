@@ -48,6 +48,7 @@ class HealthcareLeadAgent {
         
         try {
             // Step 1: AI generates search query
+            console.log('🤖 Calling OpenRouter AI for search query generation...');
             const searchQueryResponse = await openai.chat.completions.create({
                 model: 'deepseek/deepseek-chat-v3.1:free',
                 messages: [
@@ -68,15 +69,19 @@ class HealthcareLeadAgent {
             console.log(`🔍 Generated search query: "${searchQuery}"`);
 
             // Step 2: Search with EXA
+            console.log('🔍 Starting EXA search...');
             const searchResults = await this.exaSearch(searchQuery, 3);
             
             if (!searchResults.results || searchResults.results.length === 0) {
+                console.log('❌ No EXA search results found');
                 return {
                     leads: [],
                     search_summary: `No results found for: ${searchQuery}`,
                     total_found: 0
                 };
             }
+            
+            console.log(`✅ Found ${searchResults.results.length} EXA search results`);
 
             // Step 3: Process each result
             const leads = [];
@@ -173,6 +178,7 @@ Extract structured lead information as JSON:`
             
         } catch (error) {
             console.error('❌ AI lead discovery failed:', error);
+            console.error('Error details:', error.response?.data || error.message);
             return {
                 leads: [],
                 error: error.message,
