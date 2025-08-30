@@ -62,6 +62,38 @@ app.post('/automate', async (req, res) => {
     }
 });
 
+// Telegram webhook endpoint
+app.post('/telegram-webhook', async (req, res) => {
+    const { message } = req.body;
+    const chatId = message?.chat?.id;
+    const messageText = message?.text;
+    
+    if (!message || !chatId || !messageText) {
+        return res.json({ status: 'ok' });
+    }
+    
+    const urlMatch = messageText.match(/https?:\/\/[^\s]+/);
+    
+    if (urlMatch) {
+        const url = urlMatch[0];
+        
+        try {
+            const leadData = await agent.processLead(url);
+            const notionResult = await agent.storeInNotion(leadData);
+            
+            // Send response via Telegram
+            await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                chat_id: chatId,
+                text: `✅ Healthcare Lead Processed!\n\n🏥 Practice: ${leadData.company}\n📊 Lead Score: ${leadData.lead_score}/100\n💾 Notion ID: ${notionResult.leadId}`
+            });
+        } catch (error) {
+            console.error('Telegram processing error:', error);
+        }
+    }
+    
+    res.json({ status: 'ok' });
+});
+
 app.get('/', (req, res) => {
     res.json({
         agent: '🏥 Healthcare Lead Discovery Agent (Part 1)',
