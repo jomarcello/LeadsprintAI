@@ -683,17 +683,17 @@ https://dentalcare.co.uk
 
         res.json({ status: 'ok' });
 
-    } catch (rateLimitError) {
-        if (rateLimitError.remainingPoints !== undefined) {
+    } catch (error) {
+        if (error.remainingPoints !== undefined) {
             await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
                 chat_id: chatId,
                 text: '⏱️ Rate limit exceeded. Please wait a moment before sending another request.',
             });
+            res.json({ status: 'rate_limited' });
+        } else {
+            console.error('Telegram processing error:', error);
+            res.json({ status: 'error' });
         }
-        res.json({ status: 'rate_limited' });
-    } catch (error) {
-        console.error('Telegram processing error:', error);
-        res.json({ status: 'error' });
     }
 });
 
