@@ -38,129 +38,134 @@ class HealthcareLeadAgent {
         this.successCount = 0;
     }
 
-    // NEW: AI-Powered Lead Discovery with EXA Tools
+    // SIMPLIFIED: AI-Powered Lead Discovery (no functions, direct workflow)
     async discoverLeads(query) {
         console.log(`🎯 Starting AI lead discovery for: "${query}"`);
         
         try {
-            const aiResponse = await openai.chat.completions.create({
+            // Step 1: AI generates search query
+            const searchQueryResponse = await openai.chat.completions.create({
                 model: 'deepseek/deepseek-chat-v3.1:free',
                 messages: [
                     {
                         role: 'system',
-                        content: `You are a healthcare lead discovery agent. You have access to EXA AI search tools to find healthcare leads.
-
-Available tools:
-1. exa_search(query, num_results) - Search for healthcare practices
-2. exa_get_content(url) - Get detailed content from a website
-
-Your task: Find healthcare leads based on user queries. Always return results as JSON in this format:
-{
-  "leads": [
-    {
-      "company": "practice name",
-      "url": "website url",
-      "services": ["service1", "service2"],
-      "specializations": ["spec1", "spec2"],
-      "location": "city, state",
-      "contact": {"phone": "...", "email": "..."},
-      "practice_type": "type",
-      "lead_score": 85
-    }
-  ],
-  "search_summary": "what you searched for",
-  "total_found": 1
-}`
+                        content: 'You are a search query generator. Convert user requests into effective search queries for finding healthcare practices. Return only the search query, nothing else.'
                     },
                     {
                         role: 'user',
-                        content: `Find healthcare leads for: "${query}"`
+                        content: `Convert this into a good search query: "${query}"`
                     }
                 ],
-                functions: [
-                    {
-                        name: 'exa_search',
-                        description: 'Search for healthcare practices using EXA AI',
-                        parameters: {
-                            type: 'object',
-                            properties: {
-                                query: { type: 'string', description: 'Search query for healthcare practices' },
-                                num_results: { type: 'integer', description: 'Number of results to return', default: 3 }
-                            },
-                            required: ['query']
-                        }
-                    },
-                    {
-                        name: 'exa_get_content',
-                        description: 'Get detailed content from a healthcare website',
-                        parameters: {
-                            type: 'object',
-                            properties: {
-                                url: { type: 'string', description: 'Website URL to analyze' }
-                            },
-                            required: ['url']
-                        }
-                    }
-                ],
-                function_call: 'auto',
-                temperature: 0.3,
-                max_tokens: 2000
+                temperature: 0.1,
+                max_tokens: 100
             });
 
-            // Handle function calls
-            const message = aiResponse.choices[0].message;
+            const searchQuery = searchQueryResponse.choices[0].message.content.trim();
+            console.log(`🔍 Generated search query: "${searchQuery}"`);
+
+            // Step 2: Search with EXA
+            const searchResults = await this.exaSearch(searchQuery, 3);
             
-            if (message.function_call) {
-                const functionName = message.function_call.name;
-                const functionArgs = JSON.parse(message.function_call.arguments);
-                
-                console.log(`🔧 AI calling function: ${functionName}`, functionArgs);
-                
-                let functionResult;
-                if (functionName === 'exa_search') {
-                    functionResult = await this.exaSearch(functionArgs.query, functionArgs.num_results || 3);
-                } else if (functionName === 'exa_get_content') {
-                    functionResult = await this.exaGetContent(functionArgs.url);
-                }
-                
-                // Continue conversation with function result
-                const finalResponse = await openai.chat.completions.create({
-                    model: 'deepseek/deepseek-chat-v3.1:free',
-                    messages: [
-                        {
-                            role: 'system',
-                            content: `You are a healthcare lead discovery agent. Analyze the search results and extract structured lead information. Return valid JSON only.`
-                        },
-                        {
-                            role: 'user',
-                            content: `Query: "${query}"`
-                        },
-                        {
-                            role: 'assistant',
-                            content: null,
-                            function_call: message.function_call
-                        },
-                        {
-                            role: 'function',
-                            name: functionName,
-                            content: JSON.stringify(functionResult)
-                        },
-                        {
-                            role: 'user',
-                            content: 'Now extract and structure this data into healthcare leads. Return only JSON.'
-                        }
-                    ],
-                    temperature: 0.1,
-                    max_tokens: 1500
-                });
-                
-                const resultText = finalResponse.choices[0].message.content;
-                return JSON.parse(resultText);
+            if (!searchResults.results || searchResults.results.length === 0) {
+                return {
+                    leads: [],
+                    search_summary: `No results found for: ${searchQuery}`,
+                    total_found: 0
+                };
             }
-            
-            // If no function call, try to parse direct response
-            const resultText = message.content;
-            return JSON.parse(resultText);
+
+            // Step 3: Process each result
+            const leads = [];
+            for (const result of searchResults.results.slice(0, 2)) { // Limit to 2 results
+                try {
+                    // Get detailed content
+                    const content = result.text || '';
+                    const url = result.url || '';
+                    const title = result.title || '';
+
+                    // AI analysis of content
+                    const analysisResponse = await openai.chat.completions.create({
+                        model: 'deepseek/deepseek-chat-v3.1:free',
+                        messages: [
+                            {
+                                role: 'system',
+                                content: `You are a healthcare lead analyzer. Extract structured information from website content and return ONLY valid JSON in this exact format:
+{
+  "company": "practice name",
+  "url": "website url",
+  "services": ["service1", "service2"],
+  "specializations": ["spec1", "spec2"],
+  "location": "city, country",
+  "contact": {"phone": "phone", "email": "email"},
+  "practice_type": "type of practice",
+  "lead_score": 85
+}
+
+If information is missing, use null or empty array. Always return valid JSON only.`
+                            },
+                            {
+                                role: 'user',
+                                content: `Analyze this healthcare practice:
+                                
+Title: ${title}
+URL: ${url}
+Content: ${content.substring(0, 2000)}
+
+Extract structured lead information as JSON:`
+                            }
+                        ],
+                        temperature: 0.1,
+                        max_tokens: 800
+                    });
+
+                    let leadData;
+                    try {
+                        const aiResult = analysisResponse.choices[0].message.content.trim();
+                        // Clean up AI response (remove markdown if present)
+                        const jsonStart = aiResult.indexOf('{');
+                        const jsonEnd = aiResult.lastIndexOf('}') + 1;
+                        const jsonStr = aiResult.substring(jsonStart, jsonEnd);
+                        
+                        leadData = JSON.parse(jsonStr);
+                        leadData.url = url; // Ensure URL is correct
+                        
+                        // Calculate simple lead score if not provided
+                        if (!leadData.lead_score) {
+                            let score = 50; // Base score
+                            if (leadData.services && leadData.services.length > 0) score += 20;
+                            if (leadData.contact && (leadData.contact.phone || leadData.contact.email)) score += 20;
+                            if (leadData.location) score += 10;
+                            leadData.lead_score = Math.min(score, 100);
+                        }
+                        
+                        leads.push(leadData);
+                        console.log(`✅ Processed: ${leadData.company}`);
+                        
+                    } catch (parseError) {
+                        console.error(`❌ Failed to parse AI analysis for ${title}:`, parseError.message);
+                        // Create minimal lead data
+                        leads.push({
+                            company: title || 'Healthcare Practice',
+                            url: url,
+                            services: [],
+                            specializations: [],
+                            location: 'Location not available',
+                            contact: {},
+                            practice_type: 'Healthcare',
+                            lead_score: 50
+                        });
+                    }
+                    
+                } catch (error) {
+                    console.error(`❌ Failed to process result: ${error.message}`);
+                }
+            }
+
+            return {
+                leads: leads,
+                search_summary: `Found ${leads.length} healthcare practices for: ${query}`,
+                total_found: leads.length
+            };
             
         } catch (error) {
             console.error('❌ AI lead discovery failed:', error);
