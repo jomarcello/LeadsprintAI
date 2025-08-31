@@ -23,7 +23,7 @@ console.log('🔧 OpenRouter API Key:', process.env.OPENROUTER_API_KEY ? 'Set' :
 console.log('🌐 Railway Public Domain:', process.env.RAILWAY_PUBLIC_DOMAIN);
 
 const openai = new OpenAI({
-    apiKey: process.env.OPENROUTER_API_KEY,
+    apiKey: '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',
     baseURL: 'https://openrouter.ai/api/v1',
     defaultHeaders: {
         'HTTP-Referer': `https://${process.env.RAILWAY_PUBLIC_DOMAIN || 'healthcare-part1-final-production.up.railway.app'}`,
@@ -283,12 +283,16 @@ FORBIDDEN: code, technical terms, documentation, programming content, Android by
                                           userMessage.toLowerCase().includes('medical');
                     
                     if (isCompanySearch) {
-                        console.log('🏢 Using company_research_exa for:', userMessage);
-                        searchResults = await this.exaClient.companyResearch(userMessage, 5);
+                        // Create optimized search query for local healthcare providers
+                        const optimizedQuery = this.createHealthcareQuery(userMessage);
+                        console.log('🏢 Using company_research_exa with optimized query:', optimizedQuery);
+                        searchResults = await this.exaClient.companyResearch(optimizedQuery, 5);
                         console.log('🏢 Company research results:', searchResults.total, 'found');
                     } else {
-                        console.log('🔍 Using web_search_exa for:', userMessage);  
-                        searchResults = await this.exaClient.searchWeb(userMessage, 5);
+                        // Create optimized search query for general web search
+                        const optimizedQuery = this.createHealthcareQuery(userMessage);
+                        console.log('🔍 Using web_search_exa with optimized query:', optimizedQuery);  
+                        searchResults = await this.exaClient.searchWeb(optimizedQuery, 5);
                         console.log('🔍 Web search results:', searchResults.total, 'found');
                     }
                     
@@ -327,7 +331,7 @@ FORBIDDEN: code, technical terms, documentation, programming content, Android by
             // Get AI response
             console.log('🤖 Calling OpenRouter AI for conversation...');
             const response = await openai.chat.completions.create({
-                model: 'z-ai/glm-4.5-air:free',
+                model: 'deepseek/deepseek-chat-v3.1:free',
                 messages: messages,
                 temperature: 0.7,
                 max_tokens: 1500,
@@ -486,7 +490,7 @@ FORBIDDEN: code, technical terms, documentation, programming content, Android by
                 try {
                     // Use AI to extract structured lead data
                     const extractionResponse = await openai.chat.completions.create({
-                        model: 'z-ai/glm-4.5-air:free',
+                        model: 'deepseek/deepseek-chat-v3.1:free',
                         messages: [
                             {
                                 role: 'system',
