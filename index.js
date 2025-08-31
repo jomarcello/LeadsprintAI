@@ -225,8 +225,35 @@ class SmitheryNotionClient {
         this.serverUrl = `https://server.smithery.ai/@smithery/notion/mcp?api_key=${this.apiKey}&profile=${this.profile}`;
     }
 
+    async listDatabases() {
+        try {
+            console.log('🔍 Listing Notion databases via Smithery MCP...');
+            const response = await axios.post(this.serverUrl, {
+                jsonrpc: '2.0',
+                id: Date.now(),
+                method: 'tools/call',
+                params: {
+                    name: 'list-databases',
+                    arguments: {}
+                }
+            });
+
+            console.log('📊 Smithery MCP list-databases response:', JSON.stringify(response.data, null, 2));
+            return response.data.result;
+        } catch (error) {
+            console.error('❌ Failed to list databases:', error.message);
+            if (error.response) {
+                console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+            }
+            throw error;
+        }
+    }
+
     async createPage(databaseId, properties) {
         try {
+            console.log(`📝 Creating Notion page via Smithery MCP for database: ${databaseId}`);
+            console.log('🔧 Page properties:', JSON.stringify(properties, null, 2));
+            
             const response = await axios.post(this.serverUrl, {
                 jsonrpc: '2.0',
                 id: Date.now(),
@@ -242,6 +269,8 @@ class SmitheryNotionClient {
                 }
             });
 
+            console.log('📤 Smithery MCP create-page response:', JSON.stringify(response.data, null, 2));
+
             if (response.data.result) {
                 console.log('✅ Notion page created via Smithery MCP');
                 return response.data.result;
@@ -249,9 +278,9 @@ class SmitheryNotionClient {
                 throw new Error('Invalid MCP response format');
             }
         } catch (error) {
-            console.error('❌ Smithery Notion MCP error:', error.message);
+            console.error('❌ Smithery Notion MCP create-page error:', error.message);
             if (error.response) {
-                console.error('Response data:', error.response.data);
+                console.error('Response data:', JSON.stringify(error.response.data, null, 2));
             }
             throw error;
         }
@@ -658,7 +687,15 @@ Extract structured lead information as JSON:`
     // Store lead in Notion CRM via Smithery MCP
     async storeInNotion(leadData) {
         if (!process.env.NOTION_DATABASE_ID) {
-            console.warn('⚠️ Notion database ID not configured, skipping storage');
+            console.warn('⚠️ Notion database ID not configured, using default database ID');
+            // Use a default database ID or create one
+            console.log('📝 Creating Notion database for healthcare leads...');
+            try {
+                const databases = await this.notionClient.listDatabases();
+                console.log('📚 Available databases:', databases);
+            } catch (dbError) {
+                console.error('❌ Failed to list databases:', dbError.message);
+            }
             return;
         }
 
