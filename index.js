@@ -585,94 +585,116 @@ IMPORTANT: Only provide healthcare provider information. Do not generate any cod
         return optimizedQuery;
     }
 
-    // Extract and store healthcare leads from search results
+    // Extract and store healthcare leads from search results - SIMPLE AUTOMATION PATTERN
     async extractAndStoreLeads(chatId, toolResults, originalQuery) {
         try {
             const searchResult = toolResults.find(t => t.tool === 'web_search_exa');
-            const contentResult = toolResults.find(t => t.tool === 'exa_get_content');
 
             if (!searchResult?.results || searchResult.results.length === 0) {
                 console.log('⚠️ No search results found for lead extraction');
                 return;
             }
 
-            console.log('📊 Extracting healthcare leads from search results...');
+            console.log('📊 Processing leads with standard automation pattern...');
 
             for (let i = 0; i < Math.min(3, searchResult.results.length); i++) {
                 const result = searchResult.results[i];
-                const detailedContent = contentResult?.content?.[i];
 
                 try {
-                    // Use AI to extract structured lead data
-                    const extractionResponse = await openai.chat.completions.create({
-                        model: 'qwen/qwen-2.5-72b-instruct:free',
-                        messages: [
-                            {
-                                role: 'system',
-                                content: `You are a healthcare lead analyzer. Extract structured information from website content and return ONLY valid JSON in this exact format:
-{
-  "company": "practice name",
-  "url": "website url",
-  "services": ["service1", "service2"],
-  "specializations": ["spec1", "spec2"],
-  "location": "city, country",
-  "contact": {"phone": "phone", "email": "email"},
-  "practice_type": "type of practice",
-  "lead_score": 85
-}
+                    // STANDARD AUTOMATION PATTERN: Direct field mapping (like Zapier/n8n)
+                    const leadData = this.parseSearchResultToLead(result, originalQuery, chatId);
+                    
+                    // Store in Notion immediately
+                    console.log(`🔄 Storing lead: ${leadData.company}`);
+                    await this.storeInNotion(leadData);
+                    this.processedLeads.push(leadData);
 
-If information is missing, use null or empty array. Always return valid JSON only.`
-                            },
-                            {
-                                role: 'user',
-                                content: `Analyze this healthcare practice:
-                                
-Title: ${result.title || 'Healthcare Practice'}
-URL: ${result.url}
-Summary: ${result.summary || 'N/A'}
-Content: ${detailedContent?.text?.substring(0, 2000) || result.text?.substring(0, 2000) || 'Limited content available'}
-
-Extract structured lead information as JSON:`
-                            }
-                        ],
-                        temperature: 0.1,
-                        max_tokens: 800
-                    });
-
-                    let leadData;
-                    try {
-                        const aiResult = extractionResponse.choices[0].message.content.trim();
-                        const jsonStart = aiResult.indexOf('{');
-                        const jsonEnd = aiResult.lastIndexOf('}') + 1;
-                        const jsonStr = aiResult.substring(jsonStart, jsonEnd);
-                        
-                        leadData = JSON.parse(jsonStr);
-                        leadData.url = result.url;
-                        leadData.discovered_via = originalQuery;
-                        leadData.chat_id = chatId;
-                        
-                        if (!leadData.lead_score) {
-                            leadData.lead_score = this.calculateLeadScore(leadData);
-                        }
-
-                        // Store in Notion
-                        await this.storeInNotion(leadData);
-                        this.processedLeads.push(leadData);
-
-                        console.log(`✅ Extracted and stored lead: ${leadData.company}`);
-
-                    } catch (parseError) {
-                        console.error(`❌ Failed to parse AI analysis for ${result.title}:`, parseError.message);
-                    }
+                    console.log(`✅ Successfully stored lead: ${leadData.company} - ${leadData.phone || 'No phone'}`);
 
                 } catch (error) {
-                    console.error(`❌ Failed to process search result: ${error.message}`);
+                    console.error(`❌ Failed to process search result ${i + 1}:`, error.message);
+                    console.error(`🔍 Search result was:`, {
+                        title: result.title,
+                        url: result.url,
+                        hasText: !!result.text
+                    });
                 }
             }
 
+            console.log(`✅ Processed ${searchResult.results.length} leads using standard automation pattern`);
+
         } catch (error) {
             console.error('❌ Lead extraction failed:', error.message);
+            console.error('🔍 Full error:', error);
         }
+    }
+
+    // STANDARD FIELD MAPPING - Like Zapier/Make/n8n
+    parseSearchResultToLead(result, originalQuery, chatId) {
+        console.log(`🔧 Parsing lead data from: ${result.title}`);
+        
+        // Extract company name (remove everything after | or -)
+        const company = result.title
+            ?.replace(/\s*[\|\-].*$/, '')
+            ?.trim() || 'Unknown Company';
+
+        // Extract phone number using regex
+        const phoneMatch = result.text?.match(/(?:\+46|08)[\s\-]?[\d\s\-]{8,15}/);
+        const phone = phoneMatch?.[0]?.replace(/\s+/g, ' ').trim() || null;
+
+        // Extract email using regex  
+        const emailMatch = result.text?.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+        const email = emailMatch?.[0] || null;
+
+        // Detect practice type from text
+        let practiceType = 'Healthcare';
+        const text = result.text?.toLowerCase() || '';
+        if (text.includes('cosmetic') || text.includes('estetisk')) practiceType = 'Cosmetic';
+        else if (text.includes('dental') || text.includes('tandläkare')) practiceType = 'Dental';
+        else if (text.includes('plastikkirurg')) practiceType = 'Plastic Surgery';
+
+        // Extract services
+        const services = [];
+        if (text.includes('botox')) services.push('Botox');
+        if (text.includes('filler')) services.push('Fillers');
+        if (text.includes('bröstf')) services.push('Breast Surgery');
+        if (text.includes('näsplastik')) services.push('Nose Surgery');
+
+        const leadData = {
+            company: company,
+            url: result.url,
+            phone: phone,
+            email: email,
+            location: this.extractLocationFromQuery(originalQuery) || 'Stockholm',
+            practice_type: practiceType,
+            services: services,
+            lead_score: this.calculateSimpleLeadScore(phone, email, services.length),
+            discovered_via: originalQuery,
+            discovery_date: new Date().toISOString().split('T')[0],
+            chat_id: chatId
+        };
+
+        console.log(`📋 Parsed lead data:`, {
+            company: leadData.company,
+            phone: leadData.phone,
+            email: leadData.email,
+            services: leadData.services.length
+        });
+
+        return leadData;
+    }
+
+    extractLocationFromQuery(query) {
+        const locationMatch = query?.match(/in\s+([a-zA-Z\s]+)|near\s+([a-zA-Z\s]+)/i);
+        return locationMatch?.[1]?.trim() || locationMatch?.[2]?.trim() || null;
+    }
+
+    calculateSimpleLeadScore(phone, email, servicesCount) {
+        let score = 50; // Base score
+        if (phone) score += 25;
+        if (email) score += 25;
+        if (servicesCount > 0) score += servicesCount * 5;
+        return Math.min(score, 100);
     }
 
     calculateLeadScore(leadData) {
