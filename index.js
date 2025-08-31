@@ -283,11 +283,11 @@ FORBIDDEN: code, technical terms, documentation, programming content, Android by
                                           userMessage.toLowerCase().includes('medical');
                     
                     if (isCompanySearch) {
-                        // Create optimized search query for local healthcare providers
+                        // For local healthcare providers, use web search to avoid financial data
                         const optimizedQuery = this.createHealthcareQuery(userMessage);
-                        console.log('🏢 Using company_research_exa with optimized query:', optimizedQuery);
-                        searchResults = await this.exaClient.companyResearch(optimizedQuery, 5);
-                        console.log('🏢 Company research results:', searchResults.total, 'found');
+                        console.log('🔍 Using web_search_exa for healthcare providers with query:', optimizedQuery);
+                        searchResults = await this.exaClient.searchWeb(optimizedQuery, 5);
+                        console.log('🔍 Web search results:', searchResults.total, 'found');
                     } else {
                         // Create optimized search query for general web search
                         const optimizedQuery = this.createHealthcareQuery(userMessage);
@@ -297,7 +297,7 @@ FORBIDDEN: code, technical terms, documentation, programming content, Android by
                     }
                     
                     toolResults.push({
-                        tool: isCompanySearch ? 'company_research_exa' : 'web_search_exa',
+                        tool: 'web_search_exa',
                         query: userMessage,
                         results: searchResults
                     });
