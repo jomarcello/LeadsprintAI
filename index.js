@@ -305,6 +305,7 @@ FORBIDDEN: code, technical terms, documentation, programming content, Android by
                     // Store the search results for lead extraction
                     if (searchResults.results && searchResults.results.length > 0) {
                         console.log(`📊 Found ${searchResults.results.length} search results for lead analysis`);
+                        console.log('🔍 First search result sample:', JSON.stringify(searchResults.results[0], null, 2));
                     }
                 } catch (searchError) {
                     console.error('❌ Search tool error:', searchError.message);
@@ -330,6 +331,8 @@ FORBIDDEN: code, technical terms, documentation, programming content, Android by
 
             // Get AI response
             console.log('🤖 Calling OpenRouter AI for conversation...');
+            console.log('📤 Messages sent to AI:', JSON.stringify(messages, null, 2));
+            
             const response = await openai.chat.completions.create({
                 model: 'deepseek/deepseek-chat-v3.1:free',
                 messages: messages,
@@ -339,13 +342,21 @@ FORBIDDEN: code, technical terms, documentation, programming content, Android by
             });
 
             let aiResponse = response.choices[0].message.content;
+            console.log('📥 Raw AI response:', aiResponse);
 
             // Clean the response from special tokens that break Telegram
             aiResponse = this.cleanResponseForTelegram(aiResponse);
+            console.log('🧹 Cleaned AI response:', aiResponse);
             
             // Validate response is healthcare-related (block technical/code content)
-            if (this.isNonHealthcareResponse(aiResponse)) {
+            const isBlocked = this.isNonHealthcareResponse(aiResponse);
+            console.log('🛡️ Response validation - isNonHealthcare:', isBlocked);
+            
+            if (isBlocked) {
+                console.log('❌ AI response BLOCKED - using fallback message');
                 aiResponse = "I help find healthcare providers like clinics, dentists, hospitals, and medical practices. Please ask me to search for healthcare services in your area.";
+            } else {
+                console.log('✅ AI response APPROVED - sending original response');
             }
             
             // Ensure response fits within Telegram's 4096 character limit
@@ -371,6 +382,8 @@ FORBIDDEN: code, technical terms, documentation, programming content, Android by
                 await this.extractAndStoreLeads(chatId, toolResults, userMessage);
             }
 
+            console.log('📤 Final response sent to user:', aiResponse);
+            
             return {
                 response: aiResponse,
                 toolsUsed: toolResults.length > 0,
