@@ -2,7 +2,6 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
-const { Client } = require('@notionhq/client');
 const OpenAI = require('openai');
 const validator = require('validator');
 const { RateLimiterMemory } = require('rate-limiter-flexible');
@@ -13,11 +12,6 @@ app.use(cors());
 app.use(express.json());
 
 const PORT = process.env.PORT || 8080;
-
-// Initialize API clients
-const notion = new Client({ 
-    auth: process.env.NOTION_TOKEN 
-});
 
 console.log('🔧 OpenRouter API Key:', process.env.OPENROUTER_API_KEY ? 'Set' : 'Missing');
 console.log('🌐 Railway Public Domain:', process.env.RAILWAY_PUBLIC_DOMAIN);
@@ -38,7 +32,7 @@ const telegramLimiter = new RateLimiterMemory({
     duration: 60,
 });
 
-// Smithery MCP EXA Client
+// Smithery MCP Clients
 class SmitheryExaClient {
     constructor() {
         this.client = null;
@@ -223,17 +217,59 @@ class SmitheryExaClient {
     }
 }
 
+// Smithery MCP Notion Client
+class SmitheryNotionClient {
+    constructor() {
+        this.apiKey = '2f9f056b-67dc-47e1-b6c4-79c41bf85d07';
+        this.profile = 'zesty-clam-4hb4aa';
+        this.serverUrl = `https://server.smithery.ai/@smithery/notion/mcp?api_key=${this.apiKey}&profile=${this.profile}`;
+    }
+
+    async createPage(databaseId, properties) {
+        try {
+            const response = await axios.post(this.serverUrl, {
+                jsonrpc: '2.0',
+                id: Date.now(),
+                method: 'tools/call',
+                params: {
+                    name: 'create-page',
+                    arguments: {
+                        parent_id: databaseId,
+                        parent_type: 'database',
+                        title: properties.Company?.title?.[0]?.text?.content || 'New Lead',
+                        properties: properties
+                    }
+                }
+            });
+
+            if (response.data.result) {
+                console.log('✅ Notion page created via Smithery MCP');
+                return response.data.result;
+            } else {
+                throw new Error('Invalid MCP response format');
+            }
+        } catch (error) {
+            console.error('❌ Smithery Notion MCP error:', error.message);
+            if (error.response) {
+                console.error('Response data:', error.response.data);
+            }
+            throw error;
+        }
+    }
+}
+
 // Conversational AI Agent with Tools
 class ConversationalHealthcareAI {
     constructor() {
         this.exaClient = new SmitheryExaClient();
+        this.notionClient = new SmitheryNotionClient();
         this.conversationHistory = new Map(); // chatId -> messages
         this.processedLeads = [];
     }
 
     async initialize() {
         await this.exaClient.connect();
-        console.log('🤖 Conversational Healthcare AI initialized with EXA tools');
+        console.log('🤖 Conversational Healthcare AI initialized with EXA and Notion MCP tools');
     }
 
     // Main AI conversation handler with tool access
@@ -618,53 +654,49 @@ Extract structured lead information as JSON:`
         return Math.min(score, 100);
     }
 
-    // Store lead in Notion CRM
+    // Store lead in Notion CRM via Smithery MCP
     async storeInNotion(leadData) {
-        if (!process.env.NOTION_TOKEN || !process.env.NOTION_DATABASE_ID) {
-            console.warn('⚠️ Notion not configured, skipping storage');
+        if (!process.env.NOTION_DATABASE_ID) {
+            console.warn('⚠️ Notion database ID not configured, skipping storage');
             return;
         }
 
         try {
-            await notion.pages.create({
-                parent: {
-                    database_id: process.env.NOTION_DATABASE_ID
+            const properties = {
+                'Company': {
+                    title: [{ text: { content: leadData.company || 'Unknown' } }]
                 },
-                properties: {
-                    'Company': {
-                        title: [{ text: { content: leadData.company || 'Unknown' } }]
-                    },
-                    'URL': {
-                        url: leadData.url || null
-                    },
-                    'Location': {
-                        rich_text: [{ text: { content: leadData.location || 'N/A' } }]
-                    },
-                    'Practice Type': {
-                        select: { name: leadData.practice_type || 'Healthcare' }
-                    },
-                    'Lead Score': {
-                        number: leadData.lead_score || 0
-                    },
-                    'Services': {
-                        multi_select: leadData.services?.slice(0, 5).map(service => ({ name: service.substring(0, 50) })) || []
-                    },
-                    'Phone': {
-                        phone_number: leadData.contact?.phone || null
-                    },
-                    'Email': {
-                        email: leadData.contact?.email || null
-                    },
-                    'Discovery Date': {
-                        date: { start: new Date().toISOString().split('T')[0] }
-                    },
-                    'Discovered Via': {
-                        rich_text: [{ text: { content: leadData.discovered_via || 'AI Search' } }]
-                    }
+                'URL': {
+                    url: leadData.url || null
+                },
+                'Location': {
+                    rich_text: [{ text: { content: leadData.location || 'N/A' } }]
+                },
+                'Practice Type': {
+                    select: { name: leadData.practice_type || 'Healthcare' }
+                },
+                'Lead Score': {
+                    number: leadData.lead_score || 0
+                },
+                'Services': {
+                    multi_select: leadData.services?.slice(0, 5).map(service => ({ name: service.substring(0, 50) })) || []
+                },
+                'Phone': {
+                    phone_number: leadData.contact?.phone || null
+                },
+                'Email': {
+                    email: leadData.contact?.email || null
+                },
+                'Discovery Date': {
+                    date: { start: new Date().toISOString().split('T')[0] }
+                },
+                'Discovered Via': {
+                    rich_text: [{ text: { content: leadData.discovered_via || 'AI Search' } }]
                 }
-            });
+            };
 
-            console.log(`✅ Stored ${leadData.company} in Notion CRM`);
+            await this.notionClient.createPage(process.env.NOTION_DATABASE_ID, properties);
+            console.log(`✅ Stored ${leadData.company} in Notion CRM via Smithery MCP`);
         } catch (error) {
             console.error(`❌ Failed to store ${leadData.company} in Notion:`, error.message);
         }
@@ -792,7 +824,7 @@ app.get('/status', (req, res) => {
         configuration: {
             smithery_exa_configured: true,
             openrouter_configured: !!process.env.OPENROUTER_API_KEY,
-            notion_configured: !!process.env.NOTION_TOKEN,
+            notion_configured: !!process.env.NOTION_DATABASE_ID,
             telegram_configured: !!process.env.TELEGRAM_BOT_TOKEN
         },
         statistics: stats,
@@ -826,7 +858,7 @@ app.get('/', (req, res) => {
         configuration: {
             smithery_exa: true,
             openrouter: !!process.env.OPENROUTER_API_KEY,
-            notion: !!process.env.NOTION_TOKEN,
+            notion: !!process.env.NOTION_DATABASE_ID,
             telegram: !!process.env.TELEGRAM_BOT_TOKEN
         }
     });
@@ -842,7 +874,7 @@ app.get('/health', (req, res) => {
         apis: {
             smithery_exa: true,
             openrouter: !!process.env.OPENROUTER_API_KEY,
-            notion: !!process.env.NOTION_TOKEN,
+            notion: !!process.env.NOTION_DATABASE_ID,
             telegram: !!process.env.TELEGRAM_BOT_TOKEN
         }
     });
@@ -856,7 +888,7 @@ app.listen(PORT, async () => {
     console.log(`\n🔧 Configuration:`);
     console.log(`   Smithery EXA: ✅ Available`);
     console.log(`   OpenRouter AI: ${process.env.OPENROUTER_API_KEY ? '✅ Available' : '❌ Missing'}`);
-    console.log(`   Notion CRM: ${process.env.NOTION_TOKEN ? '✅ Available' : '❌ Missing'}`);
+    console.log(`   Notion CRM: ${process.env.NOTION_DATABASE_ID ? '✅ Available (Smithery MCP)' : '❌ Missing'}`);
     console.log(`   Telegram Bot: ${process.env.TELEGRAM_BOT_TOKEN ? '✅ Available' : '❌ Missing'}`);
     
     // Initialize AI agent
