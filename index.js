@@ -6,6 +6,8 @@ const { Client } = require('@notionhq/client');
 const OpenAI = require('openai');
 const validator = require('validator');
 const { RateLimiterMemory } = require('rate-limiter-flexible');
+const { Client: MCPClient } = require('@modelcontextprotocol/sdk/client/index.js');
+const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js');
 
 const app = express();
 app.use(cors());
@@ -37,66 +39,265 @@ const telegramLimiter = new RateLimiterMemory({
     duration: 60,
 });
 
-// Healthcare Lead Discovery Agent
-class HealthcareLeadAgent {
+// Smithery MCP EXA Client
+class SmitheryExaClient {
     constructor() {
-        this.processedLeads = [];
-        this.errorCount = 0;
-        this.successCount = 0;
+        this.client = null;
+        this.isConnected = false;
+        this.apiKey = '2f9f056b-67dc-47e1-b6c4-79c41bf85d07';
+        this.profile = 'zesty-clam-4hb4aa';
+        this.serverUrl = `https://server.smithery.ai/exa/mcp?api_key=${this.apiKey}&profile=${this.profile}`;
     }
 
-    // SIMPLIFIED: AI-Powered Lead Discovery (no functions, direct workflow)
-    async discoverLeads(query) {
-        console.log(`🎯 Starting AI lead discovery for: "${query}"`);
+    async connect() {
+        if (this.isConnected) return;
         
         try {
-            // Step 1: AI generates search query
-            console.log('🤖 Calling OpenRouter AI for search query generation...');
-            const searchQueryResponse = await openai.chat.completions.create({
-                model: 'deepseek/deepseek-chat-v3.1:free',
-                messages: [
-                    {
-                        role: 'system',
-                        content: 'You are a search query generator. Convert user requests into effective search queries for finding healthcare practices. Return only the search query, nothing else.'
-                    },
-                    {
-                        role: 'user',
-                        content: `Convert this into a good search query: "${query}"`
-                    }
-                ],
-                temperature: 0.1,
-                max_tokens: 100
+            // For HTTP MCP servers, we'll use direct HTTP calls instead of stdio transport
+            this.isConnected = true;
+            console.log('✅ Connected to Smithery EXA MCP server');
+        } catch (error) {
+            console.error('❌ Failed to connect to Smithery EXA MCP:', error.message);
+            this.isConnected = false;
+        }
+    }
+
+    async searchWeb(query, numResults = 5) {
+        try {
+            // Make HTTP request to Smithery MCP EXA server
+            const response = await axios.post(`${this.serverUrl}/tools/call`, {
+                name: 'exa_search',
+                arguments: {
+                    query: query,
+                    num_results: numResults,
+                    include_domains: [],
+                    exclude_domains: [],
+                    start_crawl_date: null,
+                    end_crawl_date: null,
+                    start_published_date: null,
+                    end_published_date: null,
+                    use_autoprompt: true,
+                    type: 'neural'
+                }
+            }, {
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                timeout: 30000
             });
 
-            const searchQuery = searchQueryResponse.choices[0].message.content.trim();
-            console.log(`🔍 Generated search query: "${searchQuery}"`);
+            return {
+                results: response.data.content || [],
+                total: response.data.content?.length || 0
+            };
 
-            // Step 2: Search with EXA
-            console.log('🔍 Starting EXA search...');
-            const searchResults = await this.exaSearch(searchQuery, 3);
-            
-            if (!searchResults.results || searchResults.results.length === 0) {
-                console.log('❌ No EXA search results found');
-                return {
-                    leads: [],
-                    search_summary: `No results found for: ${searchQuery}`,
-                    total_found: 0
-                };
+        } catch (error) {
+            console.error(`❌ Smithery EXA search failed: ${error.message}`);
+            throw error;
+        }
+    }
+
+    async getContent(urls) {
+        try {
+            const response = await axios.post(`${this.serverUrl}/tools/call`, {
+                name: 'exa_get_contents',
+                arguments: {
+                    ids: Array.isArray(urls) ? urls : [urls]
+                }
+            }, {
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                timeout: 30000
+            });
+
+            return response.data.content || [];
+
+        } catch (error) {
+            console.error(`❌ Smithery EXA get content failed: ${error.message}`);
+            throw error;
+        }
+    }
+}
+
+// Conversational AI Agent with Tools
+class ConversationalHealthcareAI {
+    constructor() {
+        this.exaClient = new SmitheryExaClient();
+        this.conversationHistory = new Map(); // chatId -> messages
+        this.processedLeads = [];
+    }
+
+    async initialize() {
+        await this.exaClient.connect();
+        console.log('🤖 Conversational Healthcare AI initialized with EXA tools');
+    }
+
+    // Main AI conversation handler with tool access
+    async handleConversation(chatId, userMessage) {
+        console.log(`🎯 AI Conversation for chat ${chatId}: "${userMessage}"`);
+        
+        try {
+            // Get conversation history
+            let messages = this.conversationHistory.get(chatId) || [
+                {
+                    role: 'system',
+                    content: `You are a helpful AI assistant specialized in healthcare lead discovery and general conversation. You have access to web search tools through EXA.
+
+Your capabilities:
+1. 🔍 Search the web for healthcare practices, clinics, and medical services
+2. 📊 Analyze and extract structured data from healthcare websites
+3. 💾 Store leads in Notion CRM automatically
+4. 💬 Have natural conversations on any topic
+5. 🏥 Provide healthcare industry insights and advice
+
+Tools available:
+- exa_search(query, numResults): Search the web for relevant content
+- exa_get_content(urls): Get detailed content from specific URLs
+- store_in_notion(leadData): Store healthcare leads in CRM
+
+When users ask about finding healthcare practices or leads, use the search tools. For general conversation, respond naturally without tools.
+
+Always be helpful, informative, and professional.`
+                }
+            ];
+
+            // Add user message
+            messages.push({
+                role: 'user',
+                content: userMessage
+            });
+
+            // Determine if we need to use tools based on the message
+            const needsSearch = this.shouldUseSearch(userMessage);
+            let toolResults = [];
+
+            if (needsSearch) {
+                console.log('🔍 User query requires web search, using EXA tools...');
+                
+                // Use EXA search
+                try {
+                    const searchResults = await this.exaClient.searchWeb(userMessage, 5);
+                    toolResults.push({
+                        tool: 'exa_search',
+                        query: userMessage,
+                        results: searchResults
+                    });
+
+                    // If we found healthcare-related results, get detailed content
+                    if (searchResults.results && searchResults.results.length > 0) {
+                        const urls = searchResults.results.slice(0, 3).map(r => r.url).filter(Boolean);
+                        if (urls.length > 0) {
+                            const detailedContent = await this.exaClient.getContent(urls);
+                            toolResults.push({
+                                tool: 'exa_get_content',
+                                urls: urls,
+                                content: detailedContent
+                            });
+                        }
+                    }
+                } catch (searchError) {
+                    console.error('❌ Search tool error:', searchError.message);
+                    toolResults.push({
+                        tool: 'exa_search',
+                        error: `Search failed: ${searchError.message}`
+                    });
+                }
+            }
+
+            // Add tool results to context if any
+            if (toolResults.length > 0) {
+                messages.push({
+                    role: 'assistant',
+                    content: `I've searched for information about "${userMessage}". Let me analyze the results...`
+                });
+                
+                messages.push({
+                    role: 'system',
+                    content: `Tool Results:\n${JSON.stringify(toolResults, null, 2)}`
+                });
+            }
+
+            // Get AI response
+            console.log('🤖 Calling OpenRouter AI for conversation...');
+            const response = await openai.chat.completions.create({
+                model: 'deepseek/deepseek-chat-v3.1:free',
+                messages: messages,
+                temperature: 0.7,
+                max_tokens: 1500,
+                stream: false
+            });
+
+            const aiResponse = response.choices[0].message.content;
+
+            // Add AI response to history
+            messages.push({
+                role: 'assistant',
+                content: aiResponse
+            });
+
+            // Keep conversation history manageable (last 20 messages)
+            if (messages.length > 20) {
+                messages = [messages[0], ...messages.slice(-19)]; // Keep system message + last 19
             }
             
-            console.log(`✅ Found ${searchResults.results.length} EXA search results`);
+            this.conversationHistory.set(chatId, messages);
 
-            // Step 3: Process each result
-            const leads = [];
-            for (const result of searchResults.results.slice(0, 2)) { // Limit to 2 results
+            // Check if we should extract and store leads
+            if (needsSearch && toolResults.length > 0) {
+                await this.extractAndStoreLeads(chatId, toolResults, userMessage);
+            }
+
+            return {
+                response: aiResponse,
+                toolsUsed: toolResults.length > 0,
+                searchResults: toolResults.find(t => t.tool === 'exa_search')?.results
+            };
+
+        } catch (error) {
+            console.error('❌ AI conversation failed:', error);
+            return {
+                response: `I apologize, but I encountered an error processing your request: ${error.message}. Please try again or rephrase your question.`,
+                toolsUsed: false,
+                error: error.message
+            };
+        }
+    }
+
+    // Determine if the user message requires web search
+    shouldUseSearch(message) {
+        const searchKeywords = [
+            'find', 'search', 'look for', 'discover', 'locate',
+            'clinic', 'hospital', 'doctor', 'dentist', 'healthcare',
+            'medical', 'practice', 'treatment', 'therapy',
+            'cosmetic', 'aesthetic', 'surgery', 'dermatology',
+            'dental', 'orthodontist', 'physiotherapy',
+            'near me', 'in', 'around', 'close to'
+        ];
+
+        const messageWords = message.toLowerCase();
+        return searchKeywords.some(keyword => messageWords.includes(keyword));
+    }
+
+    // Extract and store healthcare leads from search results
+    async extractAndStoreLeads(chatId, toolResults, originalQuery) {
+        try {
+            const searchResult = toolResults.find(t => t.tool === 'exa_search');
+            const contentResult = toolResults.find(t => t.tool === 'exa_get_content');
+
+            if (!searchResult?.results || searchResult.results.length === 0) {
+                return;
+            }
+
+            console.log('📊 Extracting healthcare leads from search results...');
+
+            for (let i = 0; i < Math.min(3, searchResult.results.length); i++) {
+                const result = searchResult.results[i];
+                const detailedContent = contentResult?.content?.[i];
+
                 try {
-                    // Get detailed content
-                    const content = result.text || '';
-                    const url = result.url || '';
-                    const title = result.title || '';
-
-                    // AI analysis of content
-                    const analysisResponse = await openai.chat.completions.create({
+                    // Use AI to extract structured lead data
+                    const extractionResponse = await openai.chat.completions.create({
                         model: 'deepseek/deepseek-chat-v3.1:free',
                         messages: [
                             {
@@ -119,9 +320,10 @@ If information is missing, use null or empty array. Always return valid JSON onl
                                 role: 'user',
                                 content: `Analyze this healthcare practice:
                                 
-Title: ${title}
-URL: ${url}
-Content: ${content.substring(0, 2000)}
+Title: ${result.title || 'Healthcare Practice'}
+URL: ${result.url}
+Summary: ${result.summary || 'N/A'}
+Content: ${detailedContent?.text?.substring(0, 2000) || result.text?.substring(0, 2000) || 'Limited content available'}
 
 Extract structured lead information as JSON:`
                             }
@@ -132,171 +334,50 @@ Extract structured lead information as JSON:`
 
                     let leadData;
                     try {
-                        const aiResult = analysisResponse.choices[0].message.content.trim();
-                        // Clean up AI response (remove markdown if present)
+                        const aiResult = extractionResponse.choices[0].message.content.trim();
                         const jsonStart = aiResult.indexOf('{');
                         const jsonEnd = aiResult.lastIndexOf('}') + 1;
                         const jsonStr = aiResult.substring(jsonStart, jsonEnd);
                         
                         leadData = JSON.parse(jsonStr);
-                        leadData.url = url; // Ensure URL is correct
+                        leadData.url = result.url;
+                        leadData.discovered_via = originalQuery;
+                        leadData.chat_id = chatId;
                         
-                        // Calculate simple lead score if not provided
                         if (!leadData.lead_score) {
-                            let score = 50; // Base score
-                            if (leadData.services && leadData.services.length > 0) score += 20;
-                            if (leadData.contact && (leadData.contact.phone || leadData.contact.email)) score += 20;
-                            if (leadData.location) score += 10;
-                            leadData.lead_score = Math.min(score, 100);
+                            leadData.lead_score = this.calculateLeadScore(leadData);
                         }
-                        
-                        leads.push(leadData);
-                        console.log(`✅ Processed: ${leadData.company}`);
-                        
+
+                        // Store in Notion
+                        await this.storeInNotion(leadData);
+                        this.processedLeads.push(leadData);
+
+                        console.log(`✅ Extracted and stored lead: ${leadData.company}`);
+
                     } catch (parseError) {
-                        console.error(`❌ Failed to parse AI analysis for ${title}:`, parseError.message);
-                        // Create minimal lead data
-                        leads.push({
-                            company: title || 'Healthcare Practice',
-                            url: url,
-                            services: [],
-                            specializations: [],
-                            location: 'Location not available',
-                            contact: {},
-                            practice_type: 'Healthcare',
-                            lead_score: 50
-                        });
+                        console.error(`❌ Failed to parse AI analysis for ${result.title}:`, parseError.message);
                     }
-                    
+
                 } catch (error) {
-                    console.error(`❌ Failed to process result: ${error.message}`);
+                    console.error(`❌ Failed to process search result: ${error.message}`);
                 }
             }
 
-            return {
-                leads: leads,
-                search_summary: `Found ${leads.length} healthcare practices for: ${query}`,
-                total_found: leads.length
-            };
-            
         } catch (error) {
-            console.error('❌ AI lead discovery failed:', error);
-            console.error('Error details:', error.response?.data || error.message);
-            return {
-                leads: [],
-                error: error.message,
-                search_summary: `Failed to process: ${query}`,
-                total_found: 0
-            };
+            console.error('❌ Lead extraction failed:', error.message);
         }
     }
 
-    // EXA Search Function (called by AI)
-    async exaSearch(query, numResults = 3) {
-        console.log(`🔍 EXA Search: "${query}" (${numResults} results)`);
-        
-        if (!process.env.EXA_API_KEY) {
-            throw new Error('EXA API key not configured');
-        }
-
-        try {
-            const response = await axios.post('https://api.exa.ai/search', {
-                query: query,
-                type: 'neural',
-                useAutoprompt: true,
-                numResults: numResults,
-                contents: {
-                    text: {
-                        maxCharacters: 2000,
-                        includeHtmlTags: false
-                    }
-                }
-            }, {
-                headers: {
-                    'x-api-key': process.env.EXA_API_KEY,
-                    'Content-Type': 'application/json'
-                },
-                timeout: 30000
-            });
-
-            return {
-                results: response.data.results || [],
-                total: response.data.results?.length || 0
-            };
-
-        } catch (error) {
-            console.error(`❌ EXA search failed: ${error.message}`);
-            throw error;
-        }
+    calculateLeadScore(leadData) {
+        let score = 50; // Base score
+        if (leadData.services && leadData.services.length > 0) score += 20;
+        if (leadData.contact && (leadData.contact.phone || leadData.contact.email)) score += 20;
+        if (leadData.location) score += 10;
+        return Math.min(score, 100);
     }
 
-    // EXA Get Content Function (called by AI)
-    async exaGetContent(url) {
-        console.log(`📄 EXA Get Content: ${url}`);
-        
-        if (!process.env.EXA_API_KEY) {
-            throw new Error('EXA API key not configured');
-        }
-
-        try {
-            const response = await axios.post('https://api.exa.ai/contents', {
-                ids: [url],
-                text: {
-                    maxCharacters: 4000,
-                    includeHtmlTags: false
-                }
-            }, {
-                headers: {
-                    'x-api-key': process.env.EXA_API_KEY,
-                    'Content-Type': 'application/json'
-                },
-                timeout: 30000
-            });
-
-            return {
-                content: response.data.contents?.[0]?.text || '',
-                url: url
-            };
-
-        } catch (error) {
-            console.error(`❌ EXA content fetch failed: ${error.message}`);
-            throw error;
-        }
-    }
-
-    // NEW: Send individual lead result to Telegram
-    async sendLeadResult(chatId, lead) {
-        const message = `
-🏥 <b>${lead.company || 'Healthcare Practice'}</b>
-
-🌐 <b>Website:</b> ${lead.url || 'N/A'}
-📍 <b>Location:</b> ${lead.location || 'N/A'}
-🏷️ <b>Type:</b> ${lead.practice_type || 'Healthcare'}
-
-🔹 <b>Services:</b>
-${lead.services?.map(s => `• ${s}`).join('\n') || '• Information not available'}
-
-💎 <b>Specializations:</b>
-${lead.specializations?.map(s => `• ${s}`).join('\n') || '• General practice'}
-
-📞 <b>Contact:</b>
-${lead.contact?.phone ? `• Phone: ${lead.contact.phone}` : ''}
-${lead.contact?.email ? `• Email: ${lead.contact.email}` : ''}
-
-🎯 <b>Lead Score:</b> ${lead.lead_score || 0}/100
-
-💾 <i>Saved to Notion CRM</i>
-        `;
-
-        await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-            chat_id: chatId,
-            text: message.trim(),
-            parse_mode: 'HTML'
-        });
-    }
-
-    // NEW: Store lead in Notion CRM
-    async storeInNotion(lead) {
+    // Store lead in Notion CRM
+    async storeInNotion(leadData) {
         if (!process.env.NOTION_TOKEN || !process.env.NOTION_DATABASE_ID) {
             console.warn('⚠️ Notion not configured, skipping storage');
             return;
@@ -309,618 +390,64 @@ ${lead.contact?.email ? `• Email: ${lead.contact.email}` : ''}
                 },
                 properties: {
                     'Company': {
-                        title: [{ text: { content: lead.company || 'Unknown' } }]
+                        title: [{ text: { content: leadData.company || 'Unknown' } }]
                     },
                     'URL': {
-                        url: lead.url || null
+                        url: leadData.url || null
                     },
                     'Location': {
-                        rich_text: [{ text: { content: lead.location || 'N/A' } }]
+                        rich_text: [{ text: { content: leadData.location || 'N/A' } }]
                     },
                     'Practice Type': {
-                        select: { name: lead.practice_type || 'Healthcare' }
+                        select: { name: leadData.practice_type || 'Healthcare' }
                     },
                     'Lead Score': {
-                        number: lead.lead_score || 0
+                        number: leadData.lead_score || 0
                     },
                     'Services': {
-                        multi_select: lead.services?.slice(0, 5).map(service => ({ name: service.substring(0, 50) })) || []
+                        multi_select: leadData.services?.slice(0, 5).map(service => ({ name: service.substring(0, 50) })) || []
                     },
                     'Phone': {
-                        phone_number: lead.contact?.phone || null
+                        phone_number: leadData.contact?.phone || null
                     },
                     'Email': {
-                        email: lead.contact?.email || null
+                        email: leadData.contact?.email || null
                     },
                     'Discovery Date': {
                         date: { start: new Date().toISOString().split('T')[0] }
+                    },
+                    'Discovered Via': {
+                        rich_text: [{ text: { content: leadData.discovered_via || 'AI Search' } }]
                     }
                 }
             });
 
-            console.log(`✅ Stored ${lead.company} in Notion CRM`);
+            console.log(`✅ Stored ${leadData.company} in Notion CRM`);
         } catch (error) {
-            console.error(`❌ Failed to store ${lead.company} in Notion:`, error.message);
+            console.error(`❌ Failed to store ${leadData.company} in Notion:`, error.message);
         }
     }
 
-    // Legacy method for URL processing (kept for compatibility)
-    async searchWithExa(url, companyName) {
-        console.log(`🔍 EXA Search: ${companyName} at ${url}`);
-        
-        if (!process.env.EXA_API_KEY) {
-            console.warn('⚠️ EXA API key not configured, using basic extraction');
-            return await this.basicContentAnalysis(url);
-        }
-
-        try {
-            const response = await axios.post('https://api.exa.ai/search', {
-                query: `${companyName} healthcare services treatments specializations contact information`,
-                type: 'neural',
-                useAutoprompt: true,
-                numResults: 3,
-                includeDomains: [new URL(url).hostname],
-                contents: {
-                    text: {
-                        maxCharacters: 4000,
-                        includeHtmlTags: false
-                    }
-                }
-            }, {
-                headers: {
-                    'x-api-key': process.env.EXA_API_KEY,
-                    'Content-Type': 'application/json'
-                },
-                timeout: 30000
-            });
-
-            if (!response.data?.results?.length) {
-                console.log('⚠️ No EXA results found, using basic analysis');
-                return await this.basicContentAnalysis(url);
-            }
-
-            const content = response.data.results[0].text || '';
-            console.log(`📄 Analyzing ${content.length} characters of content...`);
-            
-            return await this.analyzeContentWithAI(content, url, companyName);
-
-        } catch (error) {
-            console.error(`❌ EXA search failed: ${error.message}`);
-            return await this.basicContentAnalysis(url);
-        }
+    // Clear conversation history for a chat
+    clearHistory(chatId) {
+        this.conversationHistory.delete(chatId);
     }
 
-    // PHASE 2: OpenRouter AI Integration - Intelligent content analysis
-    async analyzeContentWithAI(content, url, companyName) {
-        console.log(`🤖 AI Analysis with OpenRouter: ${companyName}`);
-        
-        if (!process.env.OPENROUTER_API_KEY) {
-            console.warn('⚠️ OpenRouter API key not configured, using pattern matching');
-            return this.extractDataWithPatterns(content, url, companyName);
-        }
-
-        try {
-            const prompt = `
-Analyze this healthcare website content and extract structured data in JSON format:
-
-Website: ${companyName}
-URL: ${url}
-Content: ${content.substring(0, 3000)}
-
-Extract the following information:
-{
-  "company": "exact company name",
-  "services": ["list of healthcare services offered"],
-  "treatments": ["specific treatments, procedures, therapies"],
-  "specializations": ["medical specializations or focus areas"],
-  "location": "city, state or address if available",
-  "phone": "phone number if found",
-  "email": "email if found",
-  "practice_type": "type of practice (cosmetic, dental, general, etc)",
-  "lead_quality_factors": ["factors that indicate lead quality"]
-}
-
-Only return valid JSON, no other text.
-`;
-
-            const response = await openai.chat.completions.create({
-                model: 'deepseek/deepseek-chat-v3.1:free',
-                messages: [
-                    { role: 'system', content: 'You are a healthcare lead analysis expert. Extract structured data from website content and return only valid JSON.' },
-                    { role: 'user', content: prompt }
-                ],
-                temperature: 0.1,
-                max_tokens: 1000
-            });
-
-            const aiResult = JSON.parse(response.choices[0].message.content);
-            
-            // Calculate lead score based on AI analysis
-            const leadScore = this.calculateAILeadScore(aiResult, content);
-            
-            return {
-                ...aiResult,
-                lead_score: leadScore,
-                ai_enhanced: true,
-                content_length: content.length,
-                extracted_at: new Date().toISOString()
-            };
-
-        } catch (error) {
-            console.error(`❌ AI analysis failed: ${error.message}`);
-            return this.extractDataWithPatterns(content, url, companyName);
-        }
-    }
-
-    // Fallback: Pattern-based extraction
-    extractDataWithPatterns(content, url, companyName) {
-        const services = this.extractServices(content);
-        const treatments = this.extractTreatments(content);
-        const specializations = this.extractSpecializations(content);
-        const contactInfo = this.extractContactInfo(content);
-        const location = this.extractLocation(content) || this.extractLocationFromUrl(new URL(url).hostname);
-
-        return {
-            company: companyName,
-            services: services,
-            treatments: treatments,
-            specializations: specializations,
-            location: location,
-            phone: contactInfo.phone,
-            email: contactInfo.email,
-            practice_type: this.determinePracticeType(content),
-            lead_score: this.calculatePatternLeadScore(services, treatments, contactInfo),
-            ai_enhanced: false,
-            extracted_at: new Date().toISOString()
-        };
-    }
-
-    // Basic content analysis fallback
-    async basicContentAnalysis(url) {
-        const hostname = new URL(url).hostname;
-        const companyName = this.extractCompanyFromUrl(hostname);
-        
-        return {
-            company: companyName,
-            services: ['Healthcare Services'],
-            treatments: ['Consultation'],
-            specializations: ['General Healthcare'],
-            location: this.extractLocationFromUrl(hostname),
-            phone: '',
-            email: '',
-            practice_type: 'general-healthcare',
-            lead_score: 30,
-            ai_enhanced: false,
-            fallback_reason: 'Basic extraction - API keys not configured'
-        };
-    }
-
-    // Helper methods for pattern extraction
-    extractServices(content) {
-        const servicePatterns = [
-            /(?:we offer|our services|services include|we provide)[\s\S]*?(?:\n\n|\.|!)/gi,
-            /(?:cosmetic|aesthetic|medical|dental|surgical|therapy|treatment|consultation)[\w\s]*(?:services?|procedures?|treatments?)/gi
-        ];
-        
-        const services = new Set();
-        servicePatterns.forEach(pattern => {
-            const matches = content.match(pattern) || [];
-            matches.forEach(match => {
-                const service = match.trim().replace(/[^\w\s-]/g, '').substring(0, 50);
-                if (service.length > 3) services.add(service);
-            });
-        });
-        
-        return Array.from(services).slice(0, 10);
-    }
-
-    extractTreatments(content) {
-        const treatmentPatterns = [
-            /(?:botox|dermal fillers?|laser therapy|chemical peels?|microneedling)/gi,
-            /(?:facelift|rhinoplasty|breast augmentation|liposuction|tummy tuck)/gi,
-            /(?:dental implants?|teeth whitening|orthodontics|root canal)/gi
-        ];
-        
-        const treatments = new Set();
-        treatmentPatterns.forEach(pattern => {
-            const matches = content.match(pattern) || [];
-            matches.forEach(match => {
-                treatments.add(match.trim().toLowerCase());
-            });
-        });
-        
-        return Array.from(treatments).slice(0, 15);
-    }
-
-    extractSpecializations(content) {
-        const specializationPatterns = [
-            /(?:speciali[sz]es? in|expert in|focus on)[\s\S]*?(?:\n|\.|,)/gi,
-            /(?:cosmetic|aesthetic|dermatology|cardiology|orthopedic)[\w\s]*(?:surgery|medicine|care)/gi
-        ];
-        
-        const specializations = new Set();
-        specializationPatterns.forEach(pattern => {
-            const matches = content.match(pattern) || [];
-            matches.forEach(match => {
-                const spec = match.trim().replace(/[^\w\s-]/g, '').substring(0, 40);
-                if (spec.length > 5) specializations.add(spec);
-            });
-        });
-        
-        return Array.from(specializations).slice(0, 8);
-    }
-
-    extractContactInfo(content) {
-        const phoneMatch = content.match(/(?:\+?[\d\s\-\(\)]{10,})/g);
-        const phone = phoneMatch ? phoneMatch[0].replace(/[^\d+]/g, '') : '';
-        
-        const emailMatch = content.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g);
-        const email = emailMatch ? emailMatch[0] : '';
-        
-        return { phone, email };
-    }
-
-    extractLocation(content) {
-        const locationPatterns = [
-            /\d+[\w\s]+(?:street|st|avenue|ave|road|rd)[\w\s,]*\d{5}/gi,
-            /(?:located in|based in|visit us at)[\s]*([^.\n]{10,60})/gi
-        ];
-        
-        for (const pattern of locationPatterns) {
-            const match = content.match(pattern);
-            if (match) return match[0].trim().substring(0, 100);
-        }
-        return null;
-    }
-
-    extractCompanyFromUrl(hostname) {
-        let name = hostname.replace(/^www\./, '').replace(/\.(com|org|net|co\.uk|nl|de|fr)$/, '');
-        const parts = name.split(/[.-]/);
-        const meaningful = parts.filter(part => part.length > 2);
-        return meaningful.map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ') + ' Healthcare';
-    }
-
-    extractLocationFromUrl(hostname) {
-        const locationHints = ['london', 'newyork', 'sydney', 'toronto', 'amsterdam', 'berlin'];
-        const domain = hostname.toLowerCase();
-        
-        for (const location of locationHints) {
-            if (domain.includes(location)) {
-                return location.charAt(0).toUpperCase() + location.slice(1);
-            }
-        }
-        return 'Healthcare Location';
-    }
-
-    determinePracticeType(content) {
-        const contentLower = content.toLowerCase();
-        
-        if (contentLower.includes('cosmetic') || contentLower.includes('aesthetic')) return 'cosmetic';
-        if (contentLower.includes('dental') || contentLower.includes('dentist')) return 'dental';
-        if (contentLower.includes('surgery') || contentLower.includes('surgical')) return 'surgical';
-        if (contentLower.includes('therapy') || contentLower.includes('rehabilitation')) return 'therapy';
-        
-        return 'general-healthcare';
-    }
-
-    calculateAILeadScore(aiResult, content) {
-        let score = 50;
-        
-        if (aiResult.services?.length > 0) score += Math.min(aiResult.services.length * 5, 25);
-        if (aiResult.treatments?.length > 0) score += Math.min(aiResult.treatments.length * 3, 20);
-        if (aiResult.phone) score += 10;
-        if (aiResult.email) score += 10;
-        if (aiResult.location) score += 5;
-        if (aiResult.specializations?.length > 0) score += 5;
-        if (content.length > 1000) score += 5;
-        
-        return Math.min(score, 100);
-    }
-
-    calculatePatternLeadScore(services, treatments, contactInfo) {
-        let score = 40;
-        
-        if (services.length > 0) score += Math.min(services.length * 3, 15);
-        if (treatments.length > 0) score += Math.min(treatments.length * 2, 10);
-        if (contactInfo.phone) score += 10;
-        if (contactInfo.email) score += 10;
-        
-        return Math.min(score, 100);
-    }
-
-    // PHASE 2: Notion Integration - Real CRM storage
-    async storeLeadInNotion(leadData) {
-        console.log(`📝 Storing lead in Notion: ${leadData.company}`);
-        
-        if (!process.env.NOTION_TOKEN) {
-            console.warn('⚠️ Notion token not configured, using mock storage');
-            return this.createMockNotionRecord(leadData);
-        }
-
-        try {
-            const notionData = this.prepareNotionData(leadData);
-            
-            const response = await notion.pages.create({
-                parent: { 
-                    database_id: process.env.NOTION_DATABASE_ID || 'default-database-id'
-                },
-                properties: notionData
-            });
-
-            console.log(`✅ Lead stored in Notion: ${response.id}`);
-            return {
-                success: true,
-                leadId: response.id,
-                notion_url: response.url,
-                created_time: response.created_time
-            };
-
-        } catch (error) {
-            console.error(`❌ Notion storage failed: ${error.message}`);
-            return this.createMockNotionRecord(leadData);
-        }
-    }
-
-    prepareNotionData(leadData) {
-        return {
-            'Company': {
-                title: [{
-                    text: { content: leadData.company || 'Healthcare Practice' }
-                }]
-            },
-            'Services': {
-                rich_text: [{
-                    text: { 
-                        content: Array.isArray(leadData.services) ? 
-                            leadData.services.join(', ').substring(0, 2000) : 
-                            'Healthcare Services'
-                    }
-                }]
-            },
-            'Treatments': {
-                rich_text: [{
-                    text: { 
-                        content: Array.isArray(leadData.treatments) ? 
-                            leadData.treatments.join(', ').substring(0, 2000) : 
-                            'Consultation'
-                    }
-                }]
-            },
-            'Lead Score': {
-                number: Math.min(Math.max(parseInt(leadData.lead_score) || 50, 0), 100)
-            },
-            'URL': {
-                url: leadData.url || 'https://example.com'
-            },
-            'Location': {
-                rich_text: [{
-                    text: { content: leadData.location || 'Unknown Location' }
-                }]
-            },
-            'Phone': {
-                rich_text: [{
-                    text: { content: leadData.phone || 'Not provided' }
-                }]
-            },
-            'Email': {
-                email: leadData.email || null
-            },
-            'Practice Type': {
-                select: { name: leadData.practice_type || 'general-healthcare' }
-            },
-            'AI Enhanced': {
-                checkbox: leadData.ai_enhanced || false
-            },
-            'Status': {
-                select: { name: 'New Lead' }
-            }
-        };
-    }
-
-    createMockNotionRecord(leadData) {
-        const mockId = `notion_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-        
-        return {
-            success: true,
-            leadId: mockId,
-            notion_url: `https://notion.so/${mockId}`,
-            created_time: new Date().toISOString(),
-            is_mock: true,
-            reason: 'Notion API not configured - using mock record'
-        };
-    }
-
-    // Main processing workflow
-    async processHealthcareLead(url) {
-        console.log(`\n🏥 PROCESSING HEALTHCARE LEAD: ${url}`);
-        const startTime = Date.now();
-        
-        try {
-            // Validate URL
-            if (!validator.isURL(url)) {
-                throw new Error('Invalid URL format');
-            }
-
-            // Step 1: Extract company name from URL
-            const hostname = new URL(url).hostname;
-            const companyName = this.extractCompanyFromUrl(hostname);
-            
-            // Step 2: EXA search and AI analysis
-            console.log(`🔍 Step 1: EXA search and AI analysis`);
-            const practiceData = await this.searchWithExa(url, companyName);
-            practiceData.url = url;
-            practiceData.domain = hostname;
-            practiceData.processed_at = new Date().toISOString();
-            
-            // Step 3: Store in Notion CRM
-            console.log(`📊 Step 2: Storing in Notion CRM`);
-            const notionResult = await this.storeLeadInNotion(practiceData);
-            
-            // Step 4: Compile results
-            const processingTime = Date.now() - startTime;
-            console.log(`✅ Lead processed in ${processingTime}ms`);
-            
-            const result = {
-                success: true,
-                processing_time: processingTime,
-                practice: {
-                    company: practiceData.company,
-                    services: practiceData.services,
-                    treatments: practiceData.treatments,
-                    specializations: practiceData.specializations,
-                    location: practiceData.location,
-                    phone: practiceData.phone,
-                    email: practiceData.email,
-                    practice_type: practiceData.practice_type,
-                    lead_score: practiceData.lead_score,
-                    ai_enhanced: practiceData.ai_enhanced
-                },
-                notion: {
-                    stored: notionResult.success,
-                    lead_id: notionResult.leadId,
-                    notion_url: notionResult.notion_url,
-                    is_mock: notionResult.is_mock || false
-                },
-                metadata: {
-                    processed_at: practiceData.processed_at,
-                    url: url,
-                    domain: hostname
-                }
-            };
-
-            this.processedLeads.push(result);
-            this.successCount++;
-            
-            return result;
-
-        } catch (error) {
-            this.errorCount++;
-            console.error(`❌ Lead processing failed: ${error.message}`);
-            
-            return {
-                success: false,
-                error: error.message,
-                processing_time: Date.now() - startTime,
-                url: url,
-                processed_at: new Date().toISOString()
-            };
-        }
-    }
-
-    // PHASE 3: Enhanced Telegram Integration
-    async sendProgressUpdate(chatId, step, total, message) {
-        try {
-            await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-                chat_id: chatId,
-                text: `🔄 Step ${step}/${total}: ${message}`,
-                parse_mode: 'HTML'
-            });
-        } catch (error) {
-            console.error('Failed to send progress update:', error.message);
-        }
-    }
-
-    async sendRichLeadSummary(chatId, result) {
-        const practice = result.practice;
-        const notion = result.notion;
-        
-        const qualityEmoji = practice.lead_score >= 80 ? '🌟' : practice.lead_score >= 60 ? '⭐' : '📋';
-        const aiEmoji = practice.ai_enhanced ? '🤖' : '🔧';
-        
-        const message = `
-${qualityEmoji} <b>Healthcare Lead Processed!</b>
-
-🏥 <b>Practice:</b> ${practice.company}
-📍 <b>Location:</b> ${practice.location}
-📊 <b>Lead Score:</b> ${practice.lead_score}/100
-
-🔧 <b>Services (${practice.services?.length || 0}):</b>
-${practice.services?.slice(0, 3).map(s => `• ${s}`).join('\n') || '• General Healthcare'}
-
-💊 <b>Treatments (${practice.treatments?.length || 0}):</b>
-${practice.treatments?.slice(0, 3).map(t => `• ${t}`).join('\n') || '• Consultation'}
-
-${practice.specializations?.length ? `🎯 <b>Specializations:</b> ${practice.specializations.slice(0, 2).join(', ')}` : ''}
-
-📞 <b>Contact:</b> ${practice.phone || 'Not found'}
-📧 <b>Email:</b> ${practice.email || 'Not found'}
-
-💾 <b>Notion:</b> ${notion.stored ? '✅ Stored' : '❌ Failed'}
-${notion.notion_url ? `🔗 <a href="${notion.notion_url}">View in Notion</a>` : ''}
-
-${aiEmoji} <b>Analysis:</b> ${practice.ai_enhanced ? 'AI-Enhanced' : 'Pattern-Based'}
-⏱️ <b>Processed:</b> ${result.processing_time}ms
-
-${practice.lead_score >= 80 ? '🎉 <b>High Quality Lead!</b>' : practice.lead_score >= 60 ? '👍 <b>Good Lead Quality</b>' : '📝 <b>Lead Captured</b>'}
-`;
-
-        try {
-            await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-                chat_id: chatId,
-                text: message,
-                parse_mode: 'HTML',
-                disable_web_page_preview: true
-            });
-        } catch (error) {
-            console.error('Failed to send rich summary:', error.message);
-            // Fallback to simple message
-            await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-                chat_id: chatId,
-                text: `✅ Healthcare Lead Processed!\n\n🏥 Practice: ${practice.company}\n📊 Lead Score: ${practice.lead_score}/100\n💾 Notion: ${notion.stored ? 'Stored' : 'Failed'}`
-            });
-        }
-    }
-
-    // PHASE 4: Analytics and monitoring
+    // Get conversation stats
     getStats() {
-        const totalProcessed = this.processedLeads.length;
-        const avgLeadScore = totalProcessed > 0 ? 
-            Math.round(this.processedLeads.reduce((sum, lead) => sum + (lead.practice?.lead_score || 0), 0) / totalProcessed) : 0;
-        
-        const avgProcessingTime = totalProcessed > 0 ?
-            Math.round(this.processedLeads.reduce((sum, lead) => sum + (lead.processing_time || 0), 0) / totalProcessed) : 0;
-
         return {
-            total_processed: totalProcessed,
-            successful: this.successCount,
-            failed: this.errorCount,
-            success_rate: totalProcessed > 0 ? Math.round((this.successCount / totalProcessed) * 100) : 0,
-            avg_lead_score: avgLeadScore,
-            avg_processing_time: avgProcessingTime,
-            uptime: Math.round(process.uptime()),
+            active_conversations: this.conversationHistory.size,
+            total_leads_processed: this.processedLeads.length,
+            exa_connected: this.exaClient.isConnected,
             recent_leads: this.processedLeads.slice(-5)
         };
     }
 }
 
-// Initialize the agent
-const agent = new HealthcareLeadAgent();
+// Initialize the AI agent
+const aiAgent = new ConversationalHealthcareAI();
 
-// PHASE 3: Enhanced API Routes
-app.post('/automate', async (req, res) => {
-    const { url } = req.body;
-    
-    if (!url) {
-        return res.status(400).json({ 
-            success: false, 
-            error: 'URL required',
-            example: { url: 'https://healthcare-practice.com' }
-        });
-    }
-
-    try {
-        const result = await agent.processHealthcareLead(url);
-        res.json(result);
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: error.message,
-            url: url
-        });
-    }
-});
-
-// Enhanced Telegram webhook with rate limiting
+// Enhanced Telegram webhook with conversational AI
 app.post('/telegram-webhook', async (req, res) => {
     const { message } = req.body;
     const chatId = message?.chat?.id;
@@ -934,47 +461,25 @@ app.post('/telegram-webhook', async (req, res) => {
         // Rate limiting
         await telegramLimiter.consume(chatId);
 
-        // Check if message contains URL (legacy support)
-        const urlMatch = messageText.match(/https?:\/\/[^\s]+/);
-        
-        if (urlMatch) {
-            const url = urlMatch[0];
-            
-            // Legacy URL processing
-            await agent.sendProgressUpdate(chatId, 1, 3, 'Starting healthcare lead discovery...');
-            await agent.sendProgressUpdate(chatId, 2, 3, 'Analyzing website with EXA and AI...');
-            const result = await agent.processHealthcareLead(url);
-            await agent.sendProgressUpdate(chatId, 3, 3, 'Storing in Notion CRM...');
-            await agent.sendRichLeadSummary(chatId, result);
-            
-        } else if (messageText.toLowerCase().includes('/start') || messageText.toLowerCase().includes('/help')) {
+        if (messageText.toLowerCase().includes('/start') || messageText.toLowerCase().includes('/help')) {
             const helpMessage = `
-🏥 <b>AI Healthcare Lead Discovery Agent</b>
+🤖 <b>AI Healthcare Assistant</b>
 
-🤖 <b>I can find healthcare leads for you!</b>
+Hi! I'm your conversational AI assistant specialized in healthcare lead discovery. I can:
 
-<b>Examples:</b>
-• "find 2 cosmetic clinics in Amsterdam"
-• "search for dental practices in London"
-• "find dermatology clinics in New York"
-• "look for plastic surgery centers in Berlin"
+💬 <b>Chat naturally</b> - Ask me anything!
+🔍 <b>Find healthcare practices</b> - "Find dental clinics in Amsterdam"
+🏥 <b>Discover leads</b> - "Search for cosmetic surgery centers in Berlin"  
+📊 <b>Analyze businesses</b> - I'll extract contact details and services
+💾 <b>Store leads automatically</b> - Everything goes to your Notion CRM
 
-🔧 <b>How it works:</b>
-🎯 <b>Step 1:</b> AI understands your query
-🔍 <b>Step 2:</b> Searches web with EXA AI tools
-🤖 <b>Step 3:</b> Analyzes websites with OpenRouter AI
-📊 <b>Step 4:</b> Stores leads in Notion CRM
+<b>Example queries:</b>
+• "Find me some dental practices in London"
+• "What are the top cosmetic clinics in Madrid?"
+• "Hi, how are you today?" (casual conversation)
+• "Search for physiotherapy centers near Paris"
 
-✨ <b>I extract:</b>
-• Company name & website
-• Services & specializations  
-• Contact information
-• Location details
-• Lead quality score (0-100)
-
-💾 <b>All leads automatically saved!</b>
-
-Just tell me what healthcare leads you're looking for! 🚀
+Just talk to me naturally - I'll understand what you need! 🚀
 `;
             
             await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
@@ -982,42 +487,39 @@ Just tell me what healthcare leads you're looking for! 🚀
                 text: helpMessage,
                 parse_mode: 'HTML'
             });
+
+        } else if (messageText.toLowerCase().includes('/clear')) {
+            aiAgent.clearHistory(chatId);
+            await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                chat_id: chatId,
+                text: '🗑️ Conversation history cleared. We can start fresh!'
+            });
+
         } else {
-            // NEW: AI Lead Discovery for natural language queries
-            await agent.sendProgressUpdate(chatId, 1, 4, '🎯 Understanding your lead request...');
+            // Handle conversation with AI
+            const result = await aiAgent.handleConversation(chatId, messageText);
             
-            const discoveryResult = await agent.discoverLeads(messageText);
-            
-            await agent.sendProgressUpdate(chatId, 2, 4, '🔍 Searching with EXA AI...');
-            await agent.sendProgressUpdate(chatId, 3, 4, '📊 Storing leads in Notion CRM...');
-            
-            if (discoveryResult.leads && discoveryResult.leads.length > 0) {
-                await agent.sendProgressUpdate(chatId, 4, 4, '✅ Lead discovery complete!');
-                
-                // Store leads in Notion and send response
-                for (const lead of discoveryResult.leads) {
-                    await agent.storeInNotion(lead);
-                    await agent.sendLeadResult(chatId, lead);
-                }
-                
-                // Send summary
+            // Send AI response
+            await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                chat_id: chatId,
+                text: result.response,
+                parse_mode: 'HTML',
+                disable_web_page_preview: true
+            });
+
+            // If leads were found, send summary
+            if (result.searchResults && result.searchResults.total > 0) {
+                const summaryMessage = `
+🎯 <b>Search Summary</b>
+
+Found <b>${result.searchResults.total}</b> results and automatically stored healthcare leads in your Notion CRM.
+
+💾 <i>All leads have been analyzed and saved with contact details, services, and lead scores!</i>
+`;
+
                 await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
                     chat_id: chatId,
-                    text: `🎉 <b>Discovery Complete!</b>\n\n` +
-                          `📊 Found: <b>${discoveryResult.total_found}</b> leads\n` +
-                          `🔍 Search: <i>${discoveryResult.search_summary}</i>\n\n` +
-                          `💾 All leads saved to your Notion CRM database!`,
-                    parse_mode: 'HTML'
-                });
-            } else {
-                await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-                    chat_id: chatId,
-                    text: `❌ <b>No leads found</b>\n\n` +
-                          `🔍 Search: <i>${discoveryResult.search_summary}</i>\n\n` +
-                          `💡 Try different keywords or location!\n\n` +
-                          `<b>Examples:</b>\n` +
-                          `• "find cosmetic clinics in Madrid"\n` +
-                          `• "search dental practices near Paris"`,
+                    text: summaryMessage,
                     parse_mode: 'HTML'
                 });
             }
@@ -1029,69 +531,64 @@ Just tell me what healthcare leads you're looking for! 🚀
         if (error.remainingPoints !== undefined) {
             await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
                 chat_id: chatId,
-                text: '⏱️ Rate limit exceeded. Please wait a moment before sending another request.',
+                text: '⏱️ Rate limit exceeded. Please wait a moment before sending another message.',
             });
             res.json({ status: 'rate_limited' });
         } else {
             console.error('Telegram processing error:', error);
+            await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                chat_id: chatId,
+                text: '❌ Sorry, I encountered an error. Please try again.',
+            });
             res.json({ status: 'error' });
         }
     }
 });
 
-// PHASE 4: Monitoring and Analytics Endpoints
+// API Routes
 app.get('/status', (req, res) => {
-    const stats = agent.getStats();
+    const stats = aiAgent.getStats();
     
     res.json({
-        agent: 'Healthcare Lead Discovery Agent',
-        version: '2.0.0',
+        agent: 'Conversational Healthcare AI',
+        version: '3.0.0',
         status: 'active',
         configuration: {
-            exa_configured: !!process.env.EXA_API_KEY,
+            smithery_exa_configured: true,
             openrouter_configured: !!process.env.OPENROUTER_API_KEY,
             notion_configured: !!process.env.NOTION_TOKEN,
             telegram_configured: !!process.env.TELEGRAM_BOT_TOKEN
         },
         statistics: stats,
-        endpoints: {
-            '/automate': 'Process single healthcare URL',
-            '/telegram-webhook': 'Telegram bot webhook',
-            '/status': 'Agent status and statistics',
-            '/health': 'Health check'
-        }
-    });
-});
-
-app.get('/leads', (req, res) => {
-    const { limit = 20 } = req.query;
-    const leads = agent.processedLeads.slice(-parseInt(limit));
-    
-    res.json({
-        leads: leads,
-        total_count: agent.processedLeads.length,
-        statistics: agent.getStats()
+        capabilities: [
+            'Natural conversation',
+            'Web search with Smithery EXA',
+            'Healthcare lead discovery',
+            'Automatic Notion CRM storage',
+            'Multi-turn conversations',
+            'Context awareness'
+        ]
     });
 });
 
 app.get('/', (req, res) => {
     res.json({
-        agent: '🏥 Healthcare Lead Discovery Agent',
-        version: '2.0.0',
-        workflow: 'Telegram → EXA Scraping → OpenRouter AI → Notion CRM → Rich Response',
+        agent: '🤖 Conversational Healthcare AI',
+        version: '3.0.0',
+        description: 'Full conversational AI with healthcare lead discovery capabilities',
+        workflow: 'Telegram ↔️ AI Conversation ↔️ Smithery EXA Tools ↔️ Notion CRM',
         features: [
-            '✅ EXA AI web scraping',
-            '✅ OpenRouter AI content analysis', 
-            '✅ Notion CRM integration',
-            '✅ Rich Telegram responses',
-            '✅ Lead scoring (0-100)',
-            '✅ Rate limiting & validation',
-            '✅ Progress tracking',
-            '✅ Analytics & monitoring'
+            '✅ Natural AI conversation',
+            '✅ Smithery MCP EXA integration',
+            '✅ Healthcare lead discovery', 
+            '✅ Automatic Notion CRM storage',
+            '✅ Context-aware responses',
+            '✅ Multi-turn conversations',
+            '✅ Rate limiting & validation'
         ],
         status: 'ready',
         configuration: {
-            exa: !!process.env.EXA_API_KEY,
+            smithery_exa: true,
             openrouter: !!process.env.OPENROUTER_API_KEY,
             notion: !!process.env.NOTION_TOKEN,
             telegram: !!process.env.TELEGRAM_BOT_TOKEN
@@ -1102,12 +599,12 @@ app.get('/', (req, res) => {
 app.get('/health', (req, res) => {
     res.json({
         status: 'healthy',
-        agent: 'healthcare-lead-discovery',
-        version: '2.0.0',
+        agent: 'conversational-healthcare-ai',
+        version: '3.0.0',
         uptime: process.uptime(),
         memory: process.memoryUsage(),
         apis: {
-            exa: !!process.env.EXA_API_KEY,
+            smithery_exa: true,
             openrouter: !!process.env.OPENROUTER_API_KEY,
             notion: !!process.env.NOTION_TOKEN,
             telegram: !!process.env.TELEGRAM_BOT_TOKEN
@@ -1115,14 +612,19 @@ app.get('/health', (req, res) => {
     });
 });
 
-app.listen(PORT, () => {
-    console.log(`\n🏥 HEALTHCARE LEAD DISCOVERY AGENT v2.0`);
+app.listen(PORT, async () => {
+    console.log(`\n🤖 CONVERSATIONAL HEALTHCARE AI v3.0`);
     console.log(`🌐 Server running on port ${PORT}`);
-    console.log(`📋 Full workflow: Telegram → EXA → OpenRouter AI → Notion → Response`);
+    console.log(`💬 Full AI conversation with healthcare lead discovery`);
+    console.log(`🔄 Workflow: Telegram ↔️ AI ↔️ Smithery EXA ↔️ Notion`);
     console.log(`\n🔧 Configuration:`);
-    console.log(`   EXA API: ${process.env.EXA_API_KEY ? '✅ Available' : '❌ Missing'}`);
+    console.log(`   Smithery EXA: ✅ Available`);
     console.log(`   OpenRouter AI: ${process.env.OPENROUTER_API_KEY ? '✅ Available' : '❌ Missing'}`);
     console.log(`   Notion CRM: ${process.env.NOTION_TOKEN ? '✅ Available' : '❌ Missing'}`);
     console.log(`   Telegram Bot: ${process.env.TELEGRAM_BOT_TOKEN ? '✅ Available' : '❌ Missing'}`);
-    console.log(`\n🎯 Ready for complete healthcare lead discovery!`);
+    
+    // Initialize AI agent
+    await aiAgent.initialize();
+    
+    console.log(`\n🎯 Ready for full conversational AI with tool access!`);
 });
