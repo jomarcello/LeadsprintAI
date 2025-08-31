@@ -23,7 +23,7 @@ console.log('🔧 OpenRouter API Key:', process.env.OPENROUTER_API_KEY ? 'Set' :
 console.log('🌐 Railway Public Domain:', process.env.RAILWAY_PUBLIC_DOMAIN);
 
 const openai = new OpenAI({
-    apiKey: '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',
+    apiKey: process.env.OPENROUTER_API_KEY,
     baseURL: 'https://openrouter.ai/api/v1',
     defaultHeaders: {
         'HTTP-Referer': `https://${process.env.RAILWAY_PUBLIC_DOMAIN || 'healthcare-part1-final-production.up.railway.app'}`,
