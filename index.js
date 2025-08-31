@@ -110,6 +110,54 @@ class SmitheryExaClient {
         }
     }
 
+    async companyResearch(companyQuery, numResults = 5) {
+        try {
+            const response = await axios.post(this.serverUrl, {
+                jsonrpc: '2.0',
+                id: Date.now(),
+                method: 'tools/call',
+                params: {
+                    name: 'company_research_exa',
+                    arguments: {
+                        companyName: companyQuery,
+                        numResults: numResults
+                    }
+                }
+            }, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json, text/event-stream'
+                },
+                timeout: 30000
+            });
+
+            console.log('🏢 Company Research Response:', JSON.stringify(response.data, null, 2));
+
+            // Parse the search results from the correct format
+            let searchResults = [];
+            if (response.data?.result?.content) {
+                const contentText = response.data.result.content[0]?.text;
+                if (contentText) {
+                    const parsedData = JSON.parse(contentText);
+                    searchResults = parsedData.results || [];
+                }
+            }
+            
+            return {
+                results: searchResults,
+                total: searchResults.length || 0
+            };
+
+        } catch (error) {
+            console.error(`❌ Smithery EXA company research failed: ${error.message}`);
+            if (error.response) {
+                console.error('Response data:', error.response.data);
+                console.error('Response status:', error.response.status);
+            }
+            throw error;
+        }
+    }
+
     async crawlContent(url) {
         try {
             const response = await axios.post(this.serverUrl, {
@@ -204,11 +252,25 @@ Always be helpful, informative, and professional.`
             if (needsSearch) {
                 console.log('🔍 User query requires web search, using EXA tools...');
                 
-                // Use EXA search
+                // Use EXA search - prefer company research for healthcare leads
                 try {
-                    const searchResults = await this.exaClient.searchWeb(userMessage, 5);
+                    let searchResults;
+                    const isCompanySearch = userMessage.toLowerCase().includes('clinic') || 
+                                          userMessage.toLowerCase().includes('hospital') ||
+                                          userMessage.toLowerCase().includes('practice') ||
+                                          userMessage.toLowerCase().includes('dental') ||
+                                          userMessage.toLowerCase().includes('medical');
+                    
+                    if (isCompanySearch) {
+                        searchResults = await this.exaClient.companyResearch(userMessage, 5);
+                        console.log('🏢 Using company research for healthcare business search');
+                    } else {
+                        searchResults = await this.exaClient.searchWeb(userMessage, 5);
+                        console.log('🔍 Using general web search');
+                    }
+                    
                     toolResults.push({
-                        tool: 'exa_search',
+                        tool: isCompanySearch ? 'company_research_exa' : 'web_search_exa',
                         query: userMessage,
                         results: searchResults
                     });
@@ -554,11 +616,10 @@ Just talk to me naturally - I'll understand what you need! 🚀
             const result = await aiAgent.handleConversation(chatId, messageText);
             const duration = ((Date.now() - startTime) / 1000).toFixed(1);
             
-            // Send AI response
+            // Send AI response (no HTML parsing to avoid Telegram errors)
             await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
                 chat_id: chatId,
                 text: result.response,
-                parse_mode: 'HTML',
                 disable_web_page_preview: true
             });
 
