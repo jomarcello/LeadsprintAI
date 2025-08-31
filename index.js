@@ -6,8 +6,7 @@ const { Client } = require('@notionhq/client');
 const OpenAI = require('openai');
 const validator = require('validator');
 const { RateLimiterMemory } = require('rate-limiter-flexible');
-const { Client: MCPClient } = require('@modelcontextprotocol/sdk/client/index.js');
-const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js');
+// MCP SDK not needed - we use direct HTTP calls to Smithery
 
 const app = express();
 app.use(cors());
