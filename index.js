@@ -53,7 +53,7 @@ class HealthcareLeadAgent {
             // Step 1: AI generates search query
             console.log('🤖 Calling OpenRouter AI for search query generation...');
             const searchQueryResponse = await openai.chat.completions.create({
-                model: 'meta-llama/llama-3.1-8b-instruct:free',
+                model: 'deepseek/deepseek-chat-v3.1:free',
                 messages: [
                     {
                         role: 'system',
@@ -97,7 +97,7 @@ class HealthcareLeadAgent {
 
                     // AI analysis of content
                     const analysisResponse = await openai.chat.completions.create({
-                        model: 'meta-llama/llama-3.1-8b-instruct:free',
+                        model: 'deepseek/deepseek-chat-v3.1:free',
                         messages: [
                             {
                                 role: 'system',
@@ -424,7 +424,7 @@ Only return valid JSON, no other text.
 `;
 
             const response = await openai.chat.completions.create({
-                model: 'meta-llama/llama-3.1-8b-instruct:free',
+                model: 'deepseek/deepseek-chat-v3.1:free',
                 messages: [
                     { role: 'system', content: 'You are a healthcare lead analysis expert. Extract structured data from website content and return only valid JSON.' },
                     { role: 'user', content: prompt }
