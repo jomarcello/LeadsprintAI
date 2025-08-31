@@ -638,8 +638,9 @@ IMPORTANT: Only provide healthcare provider information. Do not generate any cod
             ?.replace(/\s*[\|\-].*$/, '')
             ?.trim() || 'Unknown Company';
 
-        // Extract phone number using regex
-        const phoneMatch = result.text?.match(/(?:\+46|08)[\s\-]?[\d\s\-]{8,15}/);
+        // Extract phone number using regex - enhanced for international numbers
+        const phoneMatch = result.text?.match(/(?:\+\d{1,3}[\s\-]?|0)[\d\s\-\(\)]{8,15}/) || 
+                          result.text?.match(/\b(?:\d{2,4}[\s\-]?\d{3,4}[\s\-]?\d{3,4}|\d{10,})\b/);
         const phone = phoneMatch?.[0]?.replace(/\s+/g, ' ').trim() || null;
 
         // Extract email using regex  
