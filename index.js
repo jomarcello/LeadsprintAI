@@ -653,12 +653,27 @@ IMPORTANT: Only provide healthcare provider information. Do not generate any cod
         else if (text.includes('dental') || text.includes('tandläkare')) practiceType = 'Dental';
         else if (text.includes('plastikkirurg')) practiceType = 'Plastic Surgery';
 
-        // Extract services
+        // Extract services - enhanced detection
         const services = [];
         if (text.includes('botox')) services.push('Botox');
         if (text.includes('filler')) services.push('Fillers');
         if (text.includes('bröstf')) services.push('Breast Surgery');
         if (text.includes('näsplastik')) services.push('Nose Surgery');
+        if (text.includes('injectable') || text.includes('injectables')) services.push('Injectable Treatments');
+        if (text.includes('dermal') && text.includes('filler')) services.push('Dermal Fillers');
+        if (text.includes('lip') && (text.includes('filler') || text.includes('enhancement'))) services.push('Lip Enhancement');
+        if (text.includes('skin') && text.includes('therapy')) services.push('Skin Therapy');
+        if (text.includes('laser')) services.push('Laser Treatments');
+        if (text.includes('peeling') || text.includes('chemical peel')) services.push('Chemical Peels');
+        if (text.includes('microneedling')) services.push('Microneedling');
+        if (text.includes('coolsculpting')) services.push('CoolSculpting');
+        if (text.includes('radiofrequency') || text.includes('rf')) services.push('Radiofrequency');
+        if (text.includes('thread') && text.includes('lift')) services.push('Thread Lift');
+        if (text.includes('hydrafacial')) services.push('HydraFacial');
+        if (text.includes('teeth') || text.includes('dental') || text.includes('whitening')) services.push('Dental Services');
+        if (text.includes('implant')) services.push('Implants');
+        if (text.includes('massage')) services.push('Massage Therapy');
+        if (text.includes('physiotherapy') || text.includes('physical therapy')) services.push('Physiotherapy');
 
         const leadData = {
             company: company,
@@ -678,7 +693,7 @@ IMPORTANT: Only provide healthcare provider information. Do not generate any cod
             company: leadData.company,
             phone: leadData.phone,
             email: leadData.email,
-            services: leadData.services.length
+            services: `${leadData.services.length} services: ${leadData.services.join(', ') || 'None detected'}`
         });
 
         return leadData;
@@ -734,6 +749,9 @@ IMPORTANT: Only provide healthcare provider information. Do not generate any cod
                 },
                 'Contact Name': {
                     rich_text: [{ text: { content: `${leadData.company || 'Unknown'} Team` } }]
+                },
+                'Services': {
+                    rich_text: [{ text: { content: leadData.services && leadData.services.length > 0 ? leadData.services.join(', ') : 'Not specified' } }]
                 }
             };
 
