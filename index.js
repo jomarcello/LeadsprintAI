@@ -83,15 +83,28 @@ class SmitheryExaClient {
                 timeout: 30000
             });
 
-            console.log('🔍 EXA Search Response:', JSON.stringify(response.data, null, 2));
+            console.log('🔍 EXA Search Raw Response:', response.data);
 
-            // Parse the search results from the correct format
+            // Parse Server-Sent Events format response
             let searchResults = [];
-            if (response.data?.result?.content) {
-                const contentText = response.data.result.content[0]?.text;
+            let responseData = response.data;
+
+            // Handle Server-Sent Events format (string response)
+            if (typeof responseData === 'string') {
+                // Extract JSON from SSE format: "event: message\ndata: {...}"
+                const dataMatch = responseData.match(/data:\s*(.+)/);
+                if (dataMatch) {
+                    responseData = JSON.parse(dataMatch[1]);
+                }
+            }
+
+            // Parse the search results from MCP response format
+            if (responseData?.result?.content) {
+                const contentText = responseData.result.content[0]?.text;
                 if (contentText) {
                     const parsedData = JSON.parse(contentText);
                     searchResults = parsedData.results || [];
+                    console.log(`✅ Found ${searchResults.length} search results`);
                 }
             }
             
@@ -131,15 +144,28 @@ class SmitheryExaClient {
                 timeout: 30000
             });
 
-            console.log('🏢 Company Research Response:', JSON.stringify(response.data, null, 2));
+            console.log('🏢 Company Research Raw Response:', response.data);
 
-            // Parse the search results from the correct format
+            // Parse Server-Sent Events format response
             let searchResults = [];
-            if (response.data?.result?.content) {
-                const contentText = response.data.result.content[0]?.text;
+            let responseData = response.data;
+
+            // Handle Server-Sent Events format (string response)
+            if (typeof responseData === 'string') {
+                // Extract JSON from SSE format: "event: message\ndata: {...}"
+                const dataMatch = responseData.match(/data:\s*(.+)/);
+                if (dataMatch) {
+                    responseData = JSON.parse(dataMatch[1]);
+                }
+            }
+
+            // Parse the search results from MCP response format
+            if (responseData?.result?.content) {
+                const contentText = responseData.result.content[0]?.text;
                 if (contentText) {
                     const parsedData = JSON.parse(contentText);
                     searchResults = parsedData.results || [];
+                    console.log(`✅ Found ${searchResults.length} company research results`);
                 }
             }
             
