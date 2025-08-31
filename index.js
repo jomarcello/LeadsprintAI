@@ -590,15 +590,15 @@ IMPORTANT: Only provide healthcare provider information. Do not generate any cod
         try {
             const searchResult = toolResults.find(t => t.tool === 'web_search_exa');
 
-            if (!searchResult?.results || searchResult.results.length === 0) {
+            if (!searchResult?.results?.results || searchResult.results.results.length === 0) {
                 console.log('⚠️ No search results found for lead extraction');
                 return;
             }
 
             console.log('📊 Processing leads with standard automation pattern...');
 
-            for (let i = 0; i < Math.min(3, searchResult.results.length); i++) {
-                const result = searchResult.results[i];
+            for (let i = 0; i < Math.min(3, searchResult.results.results.length); i++) {
+                const result = searchResult.results.results[i];
 
                 try {
                     // STANDARD AUTOMATION PATTERN: Direct field mapping (like Zapier/n8n)
@@ -621,7 +621,7 @@ IMPORTANT: Only provide healthcare provider information. Do not generate any cod
                 }
             }
 
-            console.log(`✅ Processed ${searchResult.results.length} leads using standard automation pattern`);
+            console.log(`✅ Processed ${searchResult.results.results.length} leads using standard automation pattern`);
 
         } catch (error) {
             console.error('❌ Lead extraction failed:', error.message);
