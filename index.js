@@ -245,22 +245,7 @@ class ConversationalHealthcareAI {
             let messages = this.conversationHistory.get(chatId) || [
                 {
                     role: 'system',
-                    content: `You are EXCLUSIVELY a healthcare provider finder bot. You MUST NEVER generate any code, programming content, technical documentation, or non-healthcare information under ANY circumstances.
-
-STRICT RULES:
-1. ONLY discuss healthcare providers: clinics, hospitals, dental practices, medical services
-2. When search results are provided, summarize the healthcare providers found with their contact details
-3. NEVER generate code, programming examples, technical content, or documentation
-4. NEVER use technical terms like JavaScript, React, API, function, import, etc.
-5. If asked non-healthcare questions, respond: "I only help find healthcare providers."
-
-RESPONSE FORMAT when search results provided:
-- List the healthcare provider names
-- Include addresses and phone numbers if available
-- Mention services/treatments offered
-- Keep under 150 words, focus on practical information
-
-ABSOLUTELY FORBIDDEN: Any code, programming content, technical explanations, documentation, or non-healthcare responses.`
+                    content: `You help find healthcare providers. When given search results about clinics, hospitals, or medical services, summarize the provider names, locations, and services offered. Do not generate any code or technical content. Keep responses under 100 words.`
                 }
             ];
 
@@ -341,10 +326,10 @@ IMPORTANT: Only provide healthcare provider information. Do not generate any cod
             console.log('📤 Messages sent to AI:', JSON.stringify(messages, null, 2));
             
             const response = await openai.chat.completions.create({
-                model: 'meta-llama/llama-3.1-405b-instruct:free',
+                model: 'deepseek/deepseek-chat-v3.1:free',
                 messages: messages,
-                temperature: 0.7,
-                max_tokens: 1500,
+                temperature: 0.3,
+                max_tokens: 500,
                 stream: false
             });
 
