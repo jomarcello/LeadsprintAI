@@ -217,49 +217,85 @@ class SmitheryExaClient {
     }
 }
 
-// Simple Notion Client using direct API
-class SimpleNotionClient {
+// Import MCP SDK (CommonJS style)
+const { StreamableHTTPClientTransport } = require("@modelcontextprotocol/sdk/client/streamableHttp.js");
+const { Client } = require("@modelcontextprotocol/sdk/client/index.js");
+
+// MCP Notion Client using proper SDK
+class MCPNotionClient {
     constructor() {
-        this.notionToken = process.env.NOTION_TOKEN;
-        this.baseUrl = 'https://api.notion.com/v1';
+        this.client = null;
+        this.transport = null;
+        this.isConnected = false;
+    }
+
+    async connect() {
+        try {
+            // Construct server URL with authentication
+            const url = new URL("https://server.smithery.ai/@smithery/notion/mcp");
+            url.searchParams.set("api_key", "2f9f056b-67dc-47e1-b6c4-79c41bf85d07");
+            url.searchParams.set("profile", "zesty-clam-4hb4aa");
+            const serverUrl = url.toString();
+
+            this.transport = new StreamableHTTPClientTransport(serverUrl);
+
+            // Create MCP client
+            this.client = new Client({
+                name: "Healthcare Lead Agent",
+                version: "1.0.0"
+            });
+
+            await this.client.connect(this.transport);
+            this.isConnected = true;
+
+            // List available tools
+            const tools = await this.client.listTools();
+            console.log(`🔧 MCP Notion tools available: ${tools.map(t => t.name).join(", ")}`);
+            
+            return true;
+        } catch (error) {
+            console.error('❌ Failed to connect to MCP Notion:', error.message);
+            this.isConnected = false;
+            return false;
+        }
     }
 
     async createPage(databaseId, properties) {
         try {
-            console.log(`📝 Creating Notion page for database: ${databaseId}`);
-            console.log('🔧 Page properties:', JSON.stringify(properties, null, 2));
-            
-            if (!this.notionToken) {
-                console.warn('⚠️ No Notion token configured, simulating page creation');
-                console.log('✅ [SIMULATED] Notion page created:', {
-                    company: properties.Company?.title?.[0]?.text?.content,
-                    url: properties.URL?.url,
-                    location: properties.Location?.rich_text?.[0]?.text?.content
-                });
-                return { id: 'simulated-page-id' };
-            }
-            
-            const response = await axios.post(`${this.baseUrl}/pages`, {
-                parent: {
-                    database_id: databaseId
-                },
-                properties: properties
-            }, {
-                headers: {
-                    'Authorization': `Bearer ${this.notionToken}`,
-                    'Content-Type': 'application/json',
-                    'Notion-Version': '2022-06-28'
+            if (!this.isConnected) {
+                console.log('⚠️ MCP not connected, attempting to connect...');
+                const connected = await this.connect();
+                if (!connected) {
+                    throw new Error('Failed to connect to MCP Notion');
                 }
+            }
+
+            console.log(`📝 Creating Notion page via MCP for database: ${databaseId}`);
+            
+            // Always log the lead data that's being processed
+            console.log('📝 Processing lead data for Notion storage:', {
+                company: properties.Company?.title?.[0]?.text?.content,
+                url: properties.URL?.url,
+                location: properties.Location?.rich_text?.[0]?.text?.content,
+                phone: properties.Phone?.phone_number,
+                email: properties.Email?.email,
+                practice_type: properties['Practice Type']?.select?.name,
+                lead_score: properties['Lead Score']?.number
             });
 
-            console.log('✅ Notion page created successfully:', response.data.id);
-            return response.data;
+            // Use MCP client to create page
+            const result = await this.client.callTool('create-page', {
+                parent_id: databaseId,
+                parent_type: 'database',
+                title: properties.Company?.title?.[0]?.text?.content || 'New Lead',
+                properties: properties
+            });
+
+            console.log('✅ Notion page created via MCP:', result);
+            return result;
             
         } catch (error) {
-            console.error('❌ Failed to create Notion page:', error.message);
-            if (error.response) {
-                console.error('Response data:', JSON.stringify(error.response.data, null, 2));
-            }
+            console.error('❌ Failed to create Notion page via MCP:', error.message);
             
             // Fallback: log the data that would have been stored
             console.log('📊 [FALLBACK] Lead data that would be stored:', {
@@ -281,13 +317,14 @@ class SimpleNotionClient {
 class ConversationalHealthcareAI {
     constructor() {
         this.exaClient = new SmitheryExaClient();
-        this.notionClient = new SimpleNotionClient();
+        this.notionClient = new MCPNotionClient();
         this.conversationHistory = new Map(); // chatId -> messages
         this.processedLeads = [];
     }
 
     async initialize() {
         await this.exaClient.connect();
+        await this.notionClient.connect();
         console.log('🤖 Conversational Healthcare AI initialized with EXA and Notion MCP tools');
     }
 
