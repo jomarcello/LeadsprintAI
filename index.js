@@ -219,20 +219,18 @@ class ConversationalHealthcareAI {
             let messages = this.conversationHistory.get(chatId) || [
                 {
                     role: 'system',
-                    content: `You are a healthcare lead discovery assistant. ONLY respond about healthcare topics.
+                    content: `You are ONLY a healthcare provider finder. NEVER generate code, technical documentation, or non-healthcare content.
 
-Your job: Find healthcare businesses (clinics, hospitals, practices) and extract:
-- Clinic name
-- Treatments/services offered  
-- Contact details (phone, email, address)
+ONLY respond about:
+- Finding clinics, hospitals, dental practices
+- Healthcare services and treatments
+- Medical provider contact information
 
-Keep responses SHORT (max 200 words). Focus on practical information only.
+For ANY non-healthcare question, respond: "I only help find healthcare providers. Ask me to search for clinics, dentists, or hospitals."
 
-For general questions: "I help find healthcare providers. Ask me to search for clinics, dentists, hospitals, or medical practices."
+Keep ALL responses under 150 words. Focus on practical healthcare information only.
 
-Use search tools ONLY for healthcare-related queries. Always stay focused on healthcare business discovery.
-
-NO technical explanations, documentation, or off-topic content.`
+FORBIDDEN: code, technical terms, documentation, programming content, Android bytecode, Java, JavaScript, or any technical explanations.`
                 }
             ];
 
@@ -315,6 +313,11 @@ NO technical explanations, documentation, or off-topic content.`
             // Clean the response from special tokens that break Telegram
             aiResponse = this.cleanResponseForTelegram(aiResponse);
             
+            // Validate response is healthcare-related (block technical/code content)
+            if (this.isNonHealthcareResponse(aiResponse)) {
+                aiResponse = "I help find healthcare providers like clinics, dentists, hospitals, and medical practices. Please ask me to search for healthcare services in your area.";
+            }
+            
             // Ensure response fits within Telegram's 4096 character limit
             if (aiResponse.length > 4000) {
                 aiResponse = aiResponse.substring(0, 3900) + '...\n\n💬 Response was truncated due to length. Ask me to continue or be more specific!';
@@ -381,6 +384,46 @@ NO technical explanations, documentation, or off-topic content.`
         }
         
         return cleaned;
+    }
+
+    // Validate if response is healthcare-related (block technical/code content)
+    isNonHealthcareResponse(text) {
+        const technicalPatterns = [
+            /\.class\s+public/i,
+            /\.super\s+/i,
+            /Lcom\/google/i,
+            /\.annotation/i,
+            /\.method/i,
+            /\.field/i,
+            /invoke-direct/i,
+            /move-result/i,
+            /#\s*direct methods/i,
+            /#\s*instance fields/i,
+            /#\s*static fields/i,
+            /\.line\s+\d+/i,
+            /const\/4/i,
+            /iput-object/i,
+            /sget-object/i,
+            /monitor-enter/i,
+            /throw v\d+/i,
+            /axios/i,
+            /javascript/i,
+            /function\s*\(/i,
+            /import\s+/i,
+            /const\s+\w+\s*=/i,
+            /\.prototype\./i,
+            /Promise\.all/i
+        ];
+        
+        // Check if response contains technical patterns
+        const containsTechnical = technicalPatterns.some(pattern => pattern.test(text));
+        
+        // Check if response is very long and doesn't contain healthcare keywords
+        const healthcareKeywords = ['clinic', 'hospital', 'doctor', 'dental', 'medical', 'practice', 'treatment', 'health', 'patient', 'care'];
+        const hasHealthcareContent = healthcareKeywords.some(keyword => text.toLowerCase().includes(keyword));
+        
+        // If it contains technical patterns OR (is long and no healthcare keywords)
+        return containsTechnical || (text.length > 500 && !hasHealthcareContent);
     }
 
     // Determine if the user message requires web search
