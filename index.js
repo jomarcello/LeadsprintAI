@@ -341,7 +341,7 @@ IMPORTANT: Only provide healthcare provider information. Do not generate any cod
             console.log('📤 Messages sent to AI:', JSON.stringify(messages, null, 2));
             
             const response = await openai.chat.completions.create({
-                model: 'meta-llama/llama-3.3-70b-instruct:free',
+                model: 'qwen/qwen-2.5-72b-instruct:free',
                 messages: messages,
                 temperature: 0.7,
                 max_tokens: 1500,
