@@ -221,7 +221,7 @@ class SmitheryExaClient {
 class DirectNotionClient {
     constructor() {
         this.baseUrl = 'https://api.notion.com/v1';
-        this.notionToken = process.env.NOTION_TOKEN || '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';
+        this.notionToken = process.env.NOTION_API_KEY || process.env.NOTION_TOKEN || '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';
         this.databaseId = process.env.NOTION_DATABASE_ID || '15dae2da8b898014b2ddcaeb7ee8885d';
     }
 
