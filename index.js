@@ -213,17 +213,9 @@ Always be helpful, informative, and professional.`
                         results: searchResults
                     });
 
-                    // If we found healthcare-related results, get detailed content
+                    // Store the search results for lead extraction
                     if (searchResults.results && searchResults.results.length > 0) {
-                        const urls = searchResults.results.slice(0, 3).map(r => r.url).filter(Boolean);
-                        if (urls.length > 0) {
-                            const detailedContent = await this.exaClient.getContent(urls);
-                            toolResults.push({
-                                tool: 'exa_get_content',
-                                urls: urls,
-                                content: detailedContent
-                            });
-                        }
+                        console.log(`📊 Found ${searchResults.results.length} search results for lead analysis`);
                     }
                 } catch (searchError) {
                     console.error('❌ Search tool error:', searchError.message);
@@ -257,7 +249,10 @@ Always be helpful, informative, and professional.`
                 stream: false
             });
 
-            const aiResponse = response.choices[0].message.content;
+            let aiResponse = response.choices[0].message.content;
+
+            // Clean the response from special tokens that break Telegram
+            aiResponse = this.cleanResponseForTelegram(aiResponse);
 
             // Add AI response to history
             messages.push({
@@ -291,6 +286,35 @@ Always be helpful, informative, and professional.`
                 error: error.message
             };
         }
+    }
+
+    // Clean AI response from special tokens that break Telegram
+    cleanResponseForTelegram(text) {
+        if (!text) return '';
+        
+        // Remove common AI model special tokens
+        let cleaned = text
+            .replace(/｜begin▁of▁sentence｜/g, '')
+            .replace(/｜end▁of▁sentence｜/g, '')
+            .replace(/｜begin▁of▁text｜/g, '')
+            .replace(/｜end▁of▁text｜/g, '')
+            .replace(/<\|begin_of_text\|>/g, '')
+            .replace(/<\|end_of_text\|>/g, '')
+            .replace(/<\|im_start\|>/g, '')
+            .replace(/<\|im_end\|>/g, '')
+            .replace(/<\|endoftext\|>/g, '')
+            .replace(/\<\|.*?\|\>/g, '') // Remove any other special tokens
+            .replace(/｜.*?｜/g, ''); // Remove Japanese-style tokens
+        
+        // Clean extra whitespace
+        cleaned = cleaned.replace(/\s+/g, ' ').trim();
+        
+        // Ensure response isn't empty
+        if (!cleaned || cleaned.length < 5) {
+            cleaned = 'I apologize, but I had trouble generating a proper response. Could you please rephrase your question?';
+        }
+        
+        return cleaned;
     }
 
     // Determine if the user message requires web search
