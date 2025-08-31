@@ -63,57 +63,87 @@ class SmitheryExaClient {
 
     async searchWeb(query, numResults = 5) {
         try {
-            // Make HTTP request to Smithery MCP EXA server
-            const response = await axios.post(`${this.serverUrl}/tools/call`, {
-                name: 'exa_search',
-                arguments: {
-                    query: query,
-                    num_results: numResults,
-                    include_domains: [],
-                    exclude_domains: [],
-                    start_crawl_date: null,
-                    end_crawl_date: null,
-                    start_published_date: null,
-                    end_published_date: null,
-                    use_autoprompt: true,
-                    type: 'neural'
+            // Make HTTP request to Smithery MCP EXA server using correct MCP format
+            const response = await axios.post(this.serverUrl, {
+                jsonrpc: '2.0',
+                id: Date.now(),
+                method: 'tools/call',
+                params: {
+                    name: 'web_search_exa',
+                    arguments: {
+                        query: query,
+                        numResults: numResults
+                    }
                 }
             }, {
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json, text/event-stream'
                 },
                 timeout: 30000
             });
 
+            console.log('🔍 EXA Search Response:', JSON.stringify(response.data, null, 2));
+
+            // Parse the search results from the correct format
+            let searchResults = [];
+            if (response.data?.result?.content) {
+                const contentText = response.data.result.content[0]?.text;
+                if (contentText) {
+                    const parsedData = JSON.parse(contentText);
+                    searchResults = parsedData.results || [];
+                }
+            }
+            
             return {
-                results: response.data.content || [],
-                total: response.data.content?.length || 0
+                results: searchResults,
+                total: searchResults.length || 0
             };
 
         } catch (error) {
             console.error(`❌ Smithery EXA search failed: ${error.message}`);
+            if (error.response) {
+                console.error('Response data:', error.response.data);
+                console.error('Response status:', error.response.status);
+            }
             throw error;
         }
     }
 
-    async getContent(urls) {
+    async crawlContent(url) {
         try {
-            const response = await axios.post(`${this.serverUrl}/tools/call`, {
-                name: 'exa_get_contents',
-                arguments: {
-                    ids: Array.isArray(urls) ? urls : [urls]
+            const response = await axios.post(this.serverUrl, {
+                jsonrpc: '2.0',
+                id: Date.now(),
+                method: 'tools/call',
+                params: {
+                    name: 'crawling_exa',
+                    arguments: {
+                        url: url,
+                        maxCharacters: 3000
+                    }
                 }
             }, {
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json, text/event-stream'
                 },
                 timeout: 30000
             });
 
-            return response.data.content || [];
+            // Parse the crawled content
+            let crawledContent = '';
+            if (response.data?.result?.content) {
+                const contentText = response.data.result.content[0]?.text;
+                if (contentText) {
+                    crawledContent = contentText;
+                }
+            }
+            
+            return crawledContent;
 
         } catch (error) {
-            console.error(`❌ Smithery EXA get content failed: ${error.message}`);
+            console.error(`❌ Smithery EXA crawl content failed: ${error.message}`);
             throw error;
         }
     }
