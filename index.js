@@ -550,7 +550,9 @@ Just talk to me naturally - I'll understand what you need! 🚀
 
         } else {
             // Handle conversation with AI
+            const startTime = Date.now();
             const result = await aiAgent.handleConversation(chatId, messageText);
+            const duration = ((Date.now() - startTime) / 1000).toFixed(1);
             
             // Send AI response
             await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
@@ -560,20 +562,13 @@ Just talk to me naturally - I'll understand what you need! 🚀
                 disable_web_page_preview: true
             });
 
-            // If leads were found, send summary
+            // If leads were found, send simple success message
             if (result.searchResults && result.searchResults.total > 0) {
-                const summaryMessage = `
-🎯 <b>Search Summary</b>
-
-Found <b>${result.searchResults.total}</b> results and automatically stored healthcare leads in your Notion CRM.
-
-💾 <i>All leads have been analyzed and saved with contact details, services, and lead scores!</i>
-`;
+                const successMessage = `✅ Found ${result.searchResults.total} results • Leads stored in Notion • ${duration}s`;
 
                 await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
                     chat_id: chatId,
-                    text: summaryMessage,
-                    parse_mode: 'HTML'
+                    text: successMessage
                 });
             }
         }
