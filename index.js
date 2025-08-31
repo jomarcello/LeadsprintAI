@@ -252,7 +252,7 @@ class DirectNotionClient {
                 properties: properties
             }, {
                 headers: {
-                    'Authorization': `Bearer ${this.notionToken}`,
+                    'Authorization': `Bearer ${process.env.NOTION_API_KEY || process.env.NOTION_TOKEN || this.notionToken}`,
                     'Content-Type': 'application/json',
                     'Notion-Version': '2022-06-28'
                 },
