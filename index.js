@@ -341,7 +341,7 @@ IMPORTANT: Only provide healthcare provider information. Do not generate any cod
             console.log('📤 Messages sent to AI:', JSON.stringify(messages, null, 2));
             
             const response = await openai.chat.completions.create({
-                model: 'deepseek/deepseek-chat-v3.1:free',
+                model: 'z-ai/glm-4.5-air:free',
                 messages: messages,
                 temperature: 0.7,
                 max_tokens: 1500,
