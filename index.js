@@ -471,6 +471,36 @@ FORBIDDEN: code, technical terms, documentation, programming content, Android by
         return searchKeywords.some(keyword => messageWords.includes(keyword));
     }
 
+    // Create optimized healthcare search query
+    createHealthcareQuery(message) {
+        const lowerMessage = message.toLowerCase();
+        
+        // Extract location if present
+        let location = '';
+        const locationMatch = lowerMessage.match(/in\s+([a-zA-Z\s]+)|near\s+([a-zA-Z\s]+)|around\s+([a-zA-Z\s]+)/);
+        if (locationMatch) {
+            location = (locationMatch[1] || locationMatch[2] || locationMatch[3]).trim();
+        }
+        
+        // Extract healthcare type
+        let healthcareType = 'clinic';
+        if (lowerMessage.includes('dental') || lowerMessage.includes('dentist')) healthcareType = 'dental clinic';
+        else if (lowerMessage.includes('cosmetic') || lowerMessage.includes('aesthetic')) healthcareType = 'cosmetic clinic';
+        else if (lowerMessage.includes('dermatology') || lowerMessage.includes('dermatologist')) healthcareType = 'dermatology clinic';
+        else if (lowerMessage.includes('physiotherapy') || lowerMessage.includes('physical therapy')) healthcareType = 'physiotherapy center';
+        else if (lowerMessage.includes('surgery') || lowerMessage.includes('surgical')) healthcareType = 'surgical center';
+        else if (lowerMessage.includes('hospital')) healthcareType = 'hospital';
+        
+        // Create focused healthcare query
+        let optimizedQuery = `${healthcareType}`;
+        if (location) {
+            optimizedQuery += ` ${location}`;
+        }
+        
+        console.log(`🎯 Optimized healthcare query: "${optimizedQuery}" from "${message}"`);
+        return optimizedQuery;
+    }
+
     // Extract and store healthcare leads from search results
     async extractAndStoreLeads(chatId, toolResults, originalQuery) {
         try {
