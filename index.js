@@ -219,23 +219,20 @@ class ConversationalHealthcareAI {
             let messages = this.conversationHistory.get(chatId) || [
                 {
                     role: 'system',
-                    content: `You are a helpful AI assistant specialized in healthcare lead discovery and general conversation. You have access to web search tools through EXA.
+                    content: `You are a healthcare lead discovery assistant. ONLY respond about healthcare topics.
 
-Your capabilities:
-1. 🔍 Search the web for healthcare practices, clinics, and medical services
-2. 📊 Analyze and extract structured data from healthcare websites
-3. 💾 Store leads in Notion CRM automatically
-4. 💬 Have natural conversations on any topic
-5. 🏥 Provide healthcare industry insights and advice
+Your job: Find healthcare businesses (clinics, hospitals, practices) and extract:
+- Clinic name
+- Treatments/services offered  
+- Contact details (phone, email, address)
 
-Tools available:
-- exa_search(query, numResults): Search the web for relevant content
-- exa_get_content(urls): Get detailed content from specific URLs
-- store_in_notion(leadData): Store healthcare leads in CRM
+Keep responses SHORT (max 200 words). Focus on practical information only.
 
-When users ask about finding healthcare practices or leads, use the search tools. For general conversation, respond naturally without tools.
+For general questions: "I help find healthcare providers. Ask me to search for clinics, dentists, hospitals, or medical practices."
 
-Always be helpful, informative, and professional.`
+Use search tools ONLY for healthcare-related queries. Always stay focused on healthcare business discovery.
+
+NO technical explanations, documentation, or off-topic content.`
                 }
             ];
 
@@ -262,11 +259,13 @@ Always be helpful, informative, and professional.`
                                           userMessage.toLowerCase().includes('medical');
                     
                     if (isCompanySearch) {
+                        console.log('🏢 Using company_research_exa for:', userMessage);
                         searchResults = await this.exaClient.companyResearch(userMessage, 5);
-                        console.log('🏢 Using company research for healthcare business search');
+                        console.log('🏢 Company research results:', searchResults.total, 'found');
                     } else {
+                        console.log('🔍 Using web_search_exa for:', userMessage);  
                         searchResults = await this.exaClient.searchWeb(userMessage, 5);
-                        console.log('🔍 Using general web search');
+                        console.log('🔍 Web search results:', searchResults.total, 'found');
                     }
                     
                     toolResults.push({
@@ -315,6 +314,11 @@ Always be helpful, informative, and professional.`
 
             // Clean the response from special tokens that break Telegram
             aiResponse = this.cleanResponseForTelegram(aiResponse);
+            
+            // Ensure response fits within Telegram's 4096 character limit
+            if (aiResponse.length > 4000) {
+                aiResponse = aiResponse.substring(0, 3900) + '...\n\n💬 Response was truncated due to length. Ask me to continue or be more specific!';
+            }
 
             // Add AI response to history
             messages.push({
