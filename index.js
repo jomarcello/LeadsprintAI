@@ -245,18 +245,22 @@ class ConversationalHealthcareAI {
             let messages = this.conversationHistory.get(chatId) || [
                 {
                     role: 'system',
-                    content: `You are ONLY a healthcare provider finder. NEVER generate code, technical documentation, or non-healthcare content.
+                    content: `You are EXCLUSIVELY a healthcare provider finder bot. You MUST NEVER generate any code, programming content, technical documentation, or non-healthcare information under ANY circumstances.
 
-ONLY respond about:
-- Finding clinics, hospitals, dental practices
-- Healthcare services and treatments
-- Medical provider contact information
+STRICT RULES:
+1. ONLY discuss healthcare providers: clinics, hospitals, dental practices, medical services
+2. When search results are provided, summarize the healthcare providers found with their contact details
+3. NEVER generate code, programming examples, technical content, or documentation
+4. NEVER use technical terms like JavaScript, React, API, function, import, etc.
+5. If asked non-healthcare questions, respond: "I only help find healthcare providers."
 
-For ANY non-healthcare question, respond: "I only help find healthcare providers. Ask me to search for clinics, dentists, or hospitals."
+RESPONSE FORMAT when search results provided:
+- List the healthcare provider names
+- Include addresses and phone numbers if available
+- Mention services/treatments offered
+- Keep under 150 words, focus on practical information
 
-Keep ALL responses under 150 words. Focus on practical healthcare information only.
-
-FORBIDDEN: code, technical terms, documentation, programming content, Android bytecode, Java, JavaScript, or any technical explanations.`
+ABSOLUTELY FORBIDDEN: Any code, programming content, technical explanations, documentation, or non-healthcare responses.`
                 }
             ];
 
@@ -320,12 +324,15 @@ FORBIDDEN: code, technical terms, documentation, programming content, Android by
             if (toolResults.length > 0) {
                 messages.push({
                     role: 'assistant',
-                    content: `I've searched for information about "${userMessage}". Let me analyze the results...`
+                    content: `I've searched for healthcare providers matching "${userMessage}". Let me provide you with the clinic information...`
                 });
                 
                 messages.push({
                     role: 'system',
-                    content: `Tool Results:\n${JSON.stringify(toolResults, null, 2)}`
+                    content: `HEALTHCARE SEARCH RESULTS - Please summarize these clinics with their names, addresses, and contact details:
+${JSON.stringify(toolResults, null, 2)}
+
+IMPORTANT: Only provide healthcare provider information. Do not generate any code or technical content.`
                 });
             }
 
@@ -429,44 +436,44 @@ FORBIDDEN: code, technical terms, documentation, programming content, Android by
         return cleaned;
     }
 
-    // Validate if response is healthcare-related (block technical/code content)
+    // Validate if response is healthcare-related (block obvious code content)
     isNonHealthcareResponse(text) {
-        const technicalPatterns = [
-            /\.class\s+public/i,
-            /\.super\s+/i,
-            /Lcom\/google/i,
-            /\.annotation/i,
-            /\.method/i,
-            /\.field/i,
-            /invoke-direct/i,
-            /move-result/i,
-            /#\s*direct methods/i,
-            /#\s*instance fields/i,
-            /#\s*static fields/i,
-            /\.line\s+\d+/i,
-            /const\/4/i,
-            /iput-object/i,
-            /sget-object/i,
-            /monitor-enter/i,
-            /throw v\d+/i,
-            /axios/i,
-            /javascript/i,
+        console.log('🔍 Validating response text length:', text.length);
+        console.log('🔍 First 200 characters:', text.substring(0, 200));
+        
+        const codePatterns = [
+            /import\s+.*from/i,
             /function\s*\(/i,
-            /import\s+/i,
             /const\s+\w+\s*=/i,
             /\.prototype\./i,
-            /Promise\.all/i
+            /export\s+(default|const)/i,
+            /React\.useState/i,
+            /\.map\(/i,
+            /\.filter\(/i,
+            /StyleSheet\.create/i,
+            /<\w+\s+.*>/,  // JSX tags
+            /\{[\s\S]*\}/,  // Large code blocks with braces
+            /npm install/i,
+            /API_KEY.*=/i,
+            /console\.log/i,
+            /async\s+function/i,
+            /await\s+fetch/i
         ];
         
-        // Check if response contains technical patterns
-        const containsTechnical = technicalPatterns.some(pattern => pattern.test(text));
+        // Check if response contains obvious code patterns
+        const containsCode = codePatterns.some(pattern => pattern.test(text));
+        console.log('🔍 Contains code patterns:', containsCode);
         
-        // Check if response is very long and doesn't contain healthcare keywords
-        const healthcareKeywords = ['clinic', 'hospital', 'doctor', 'dental', 'medical', 'practice', 'treatment', 'health', 'patient', 'care'];
+        // Check if response contains healthcare keywords
+        const healthcareKeywords = ['clinic', 'hospital', 'doctor', 'dental', 'medical', 'practice', 'treatment', 'health', 'patient', 'care', 'provider'];
         const hasHealthcareContent = healthcareKeywords.some(keyword => text.toLowerCase().includes(keyword));
+        console.log('🔍 Contains healthcare keywords:', hasHealthcareContent);
         
-        // If it contains technical patterns OR (is long and no healthcare keywords)
-        return containsTechnical || (text.length > 500 && !hasHealthcareContent);
+        // Block if it's obvious code OR very long non-healthcare content
+        const isBlocked = containsCode || (text.length > 1000 && !hasHealthcareContent);
+        console.log('🔍 Final blocking decision:', isBlocked);
+        
+        return isBlocked;
     }
 
     // Determine if the user message requires web search
