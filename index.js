@@ -715,36 +715,25 @@ IMPORTANT: Only provide healthcare provider information. Do not generate any cod
         }
 
         try {
+            // Map to the correct database field names from the actual Notion database
             const properties = {
                 'Company': {
                     title: [{ text: { content: leadData.company || 'Unknown' } }]
                 },
-                'URL': {
+                'Website URL': {
                     url: leadData.url || null
                 },
                 'Location': {
                     rich_text: [{ text: { content: leadData.location || 'N/A' } }]
                 },
-                'Practice Type': {
-                    select: { name: leadData.practice_type || 'Healthcare' }
-                },
-                'Lead Score': {
-                    number: leadData.lead_score || 0
-                },
-                'Services': {
-                    multi_select: leadData.services?.slice(0, 5).map(service => ({ name: service.substring(0, 50) })) || []
-                },
                 'Phone': {
-                    phone_number: leadData.contact?.phone || null
+                    phone_number: leadData.phone || null
                 },
                 'Email': {
-                    email: leadData.contact?.email || null
+                    email: leadData.email || null
                 },
-                'Discovery Date': {
-                    date: { start: new Date().toISOString().split('T')[0] }
-                },
-                'Discovered Via': {
-                    rich_text: [{ text: { content: leadData.discovered_via || 'AI Search' } }]
+                'Contact Name': {
+                    rich_text: [{ text: { content: `${leadData.company || 'Unknown'} Team` } }]
                 }
             };
 
