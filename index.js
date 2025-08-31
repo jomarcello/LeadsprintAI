@@ -560,10 +560,11 @@ IMPORTANT: Only provide healthcare provider information. Do not generate any cod
     // Extract and store healthcare leads from search results
     async extractAndStoreLeads(chatId, toolResults, originalQuery) {
         try {
-            const searchResult = toolResults.find(t => t.tool === 'exa_search');
+            const searchResult = toolResults.find(t => t.tool === 'web_search_exa');
             const contentResult = toolResults.find(t => t.tool === 'exa_get_content');
 
             if (!searchResult?.results || searchResult.results.length === 0) {
+                console.log('⚠️ No search results found for lead extraction');
                 return;
             }
 
@@ -576,7 +577,7 @@ IMPORTANT: Only provide healthcare provider information. Do not generate any cod
                 try {
                     // Use AI to extract structured lead data
                     const extractionResponse = await openai.chat.completions.create({
-                        model: 'deepseek/deepseek-chat-v3.1:free',
+                        model: 'qwen/qwen-2.5-72b-instruct:free',
                         messages: [
                             {
                                 role: 'system',
