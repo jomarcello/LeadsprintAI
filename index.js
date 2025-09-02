@@ -221,7 +221,7 @@ class SmitheryExaClient {
 class DirectNotionClient {
     constructor() {
         this.baseUrl = 'https://api.notion.com/v1';
-        this.notionToken = process.env.NOTION_API_KEY || process.env.NOTION_TOKEN || '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';
+        this.notionToken = process.env.NOTION_API_KEY || process.env.NOTION_TOKEN;
         this.databaseId = process.env.NOTION_DATABASE_ID || '15dae2da8b898014b2ddcaeb7ee8885d';
     }
 
@@ -405,7 +405,7 @@ IMPORTANT: Only provide healthcare provider information. Do not generate any cod
             console.log('📤 Messages sent to AI:', JSON.stringify(messages, null, 2));
             
             const response = await openai.chat.completions.create({
-                model: 'qwen/qwen-2.5-72b-instruct:free',
+                model: 'deepseek/deepseek-chat-v3.1:free',
                 messages: messages,
                 temperature: 0.7,
                 max_tokens: 1500,
